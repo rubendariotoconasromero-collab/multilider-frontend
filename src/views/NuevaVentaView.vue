@@ -2,6 +2,7 @@
 import { ref, onMounted, computed, watch } from 'vue'
 import { useRouter } from 'vue-router'
 import api from '../api/axios'
+import apiPropiedades from '../api/axiosPropiedades'
 import Swal from 'sweetalert2'
 import LiveSearchSelect from '../components/LiveSearchSelect.vue'
 import ClienteModal from '../components/ClienteModal.vue'
@@ -81,7 +82,7 @@ onMounted(async () => {
   try {
     const [resCli, resProp, resAse, resMet, resCuentas] = await Promise.all([
       api.get('/clientes?per_page=50'),
-      api.get('/propiedades?per_page=100'),
+      apiPropiedades.get('/propiedades?per_page=100'),
       api.get('/asesores?per_page=100'),
       api.get('/metodos-pago?per_page=100'),
       api.get('/cuentas-bancarias?per_page=100')
@@ -125,7 +126,7 @@ const buscarPropiedadesRemoto = (query) => {
   if (!query || query.length < 2) return
   searchPropiedadTimeout = setTimeout(async () => {
     try {
-      const res = await api.get(`/propiedades?search=${query}&per_page=30`)
+      const res = await apiPropiedades.get(`/propiedades?search=${query}&per_page=30`)
       propiedades.value = res.data.data.filter(p => p.estado === 'Disponible' && p.activo)
     } catch { /* silent */ }
   }, 300)
