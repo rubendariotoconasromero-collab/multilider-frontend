@@ -11,7 +11,7 @@ const props = defineProps({
 
 const emit = defineEmits(['update:modelValue'])
 
-const asesores       = ref([])
+const usuarios       = ref([])
 const seleccionados  = ref([])
 const busqueda       = ref('')
 const cargando       = ref(false)
@@ -26,13 +26,13 @@ const close = () => {
 }
 
 watch(() => props.modelValue, async (val) => {
-  if (val && asesores.value.length === 0) {
+  if (val) {
     cargando.value = true
     try {
-      const { data } = await api.get('/asesores', { params: { per_page: 500, activo: 1 } })
-      asesores.value = (data.data ?? data).filter(a => a.correo)
+      const { data } = await api.get('/reportes/destinatarios')
+      usuarios.value = (data.data ?? data).filter(a => a.correo)
     } catch {
-      asesores.value = []
+      usuarios.value = []
     } finally {
       cargando.value = false
     }
@@ -44,24 +44,24 @@ watch(() => props.modelValue, async (val) => {
   }
 })
 
-const aseoresFiltrados = computed(() => {
-  if (!busqueda.value) return asesores.value
+const usuariosFiltrados = computed(() => {
+  if (!busqueda.value) return usuarios.value
   const q = busqueda.value.toLowerCase()
-  return asesores.value.filter(a =>
+  return usuarios.value.filter(a =>
     a.nombre?.toLowerCase().includes(q) ||
     a.correo?.toLowerCase().includes(q)
   )
 })
 
 const todosSeleccionados = computed(
-  () => asesores.value.length > 0 && seleccionados.value.length === asesores.value.length
+  () => usuarios.value.length > 0 && seleccionados.value.length === usuarios.value.length
 )
 
 function toggleTodos() {
   if (todosSeleccionados.value) {
     seleccionados.value = []
   } else {
-    seleccionados.value = asesores.value.map(a => a.id)
+    seleccionados.value = usuarios.value.map(a => a.id)
   }
 }
 
@@ -72,10 +72,10 @@ async function enviar() {
   try {
     const { data } = await api.post('/reportes/enviar-informe', {
       reporte:    props.reporte,
-      asesor_ids: seleccionados.value,
+      usuario_ids: seleccionados.value,
       params:     props.params,
     })
-    resultado.value = { tipo: 'success', msg: `Informe enviado a ${data.enviados} asesor(es).` + (data.fallidos > 0 ? ` ${data.fallidos} fallaron.` : '') }
+    resultado.value = { tipo: 'success', msg: `Informe enviado a ${data.enviados} usuario(es).` + (data.fallidos > 0 ? ` ${data.fallidos} fallaron.` : '') }
     seleccionados.value = []
   } catch (e) {
     const msg = e?.response?.data?.message ?? 'Error al enviar el informe.'
@@ -101,7 +101,7 @@ async function enviar() {
         <!-- Cuerpo -->
         <div class="modal-body-custom">
           <p class="text-muted small mb-3">
-            Seleccione los asesores que recibirán el informe PDF por correo electrónico.
+            Seleccione los usuarios que recibirán el informe PDF por correo electrónico.
           </p>
 
           <!-- Resultado -->
@@ -110,17 +110,17 @@ async function enviar() {
             {{ resultado.msg }}
           </div>
 
-          <!-- Cargando asesores -->
+          <!-- Cargando usuarios -->
           <div v-if="cargando" class="text-center py-3">
             <span class="spinner-border spinner-border-sm text-primary"></span>
-            <span class="ms-2 small">Cargando asesores...</span>
+            <span class="ms-2 small">Cargando usuarios...</span>
           </div>
 
           <template v-else>
-            <!-- Sin asesores con correo -->
-            <div v-if="asesores.length === 0" class="text-center text-muted py-3">
+            <!-- Sin usuarios con correo -->
+            <div v-if="usuarios.length === 0" class="text-center text-muted py-3">
               <i class="bi bi-person-x fs-4 d-block mb-1"></i>
-              No hay asesores con correo registrado.
+              No hay usuarios con correo registrado.
             </div>
 
             <template v-else>
@@ -129,7 +129,7 @@ async function enviar() {
                 <input
                   type="text"
                   class="form-control form-control-sm"
-                  placeholder="Buscar asesor..."
+                  placeholder="Buscar usuario..."
                   v-model="busqueda"
                 />
               </div>
@@ -137,7 +137,7 @@ async function enviar() {
               <!-- Seleccionar todos -->
               <div class="d-flex justify-content-between align-items-center mb-2">
                 <span class="small text-muted">
-                  {{ seleccionados.length }} de {{ asesores.length }} seleccionados
+                  {{ seleccionados.length }} de {{ usuarios.length }} seleccionados
                 </span>
                 <button type="button" class="btn btn-link btn-sm p-0" @click="toggleTodos">
                   {{ todosSeleccionados ? 'Deseleccionar todos' : 'Seleccionar todos' }}
@@ -145,31 +145,31 @@ async function enviar() {
               </div>
 
               <!-- Lista -->
-              <div class="lista-asesores border rounded">
+              <div class="lista-usuarios border rounded">
                 <div
-                  v-for="asesor in aseoresFiltrados"
-                  :key="asesor.id"
+                  v-for="usuario in usuariosFiltrados"
+                  :key="usuario.id"
                   class="lista-item d-flex align-items-center gap-2 px-3 py-2"
-                  :class="{ 'item-seleccionado': seleccionados.includes(asesor.id) }"
-                  @click="seleccionados.includes(asesor.id)
-                    ? seleccionados.splice(seleccionados.indexOf(asesor.id), 1)
-                    : seleccionados.push(asesor.id)"
+                  :class="{ 'item-seleccionado': seleccionados.includes(usuario.id) }"
+                  @click="seleccionados.includes(usuario.id)
+                    ? seleccionados.splice(seleccionados.indexOf(usuario.id), 1)
+                    : seleccionados.push(usuario.id)"
                 >
                   <input
                     type="checkbox"
                     class="form-check-input mt-0 flex-shrink-0"
-                    :checked="seleccionados.includes(asesor.id)"
+                    :checked="seleccionados.includes(usuario.id)"
                     @click.stop
-                    @change="seleccionados.includes(asesor.id)
-                      ? seleccionados.splice(seleccionados.indexOf(asesor.id), 1)
-                      : seleccionados.push(asesor.id)"
+                    @change="seleccionados.includes(usuario.id)
+                      ? seleccionados.splice(seleccionados.indexOf(usuario.id), 1)
+                      : seleccionados.push(usuario.id)"
                   />
                   <div>
-                    <div class="small fw-semibold mb-0 lh-1">{{ asesor.nombre }}</div>
-                    <div class="x-small text-muted">{{ asesor.correo }}</div>
+                    <div class="small fw-semibold mb-0 lh-1">{{ usuario.nombre }}</div>
+                    <div class="x-small text-muted">{{ usuario.correo }}</div>
                   </div>
                 </div>
-                <div v-if="aseoresFiltrados.length === 0" class="text-center text-muted py-3 small">
+                <div v-if="usuariosFiltrados.length === 0" class="text-center text-muted py-3 small">
                   Sin resultados para "{{ busqueda }}"
                 </div>
               </div>
@@ -242,7 +242,7 @@ async function enviar() {
   gap: 8px;
 }
 
-.lista-asesores {
+.lista-usuarios {
   max-height: 260px;
   overflow-y: auto;
 }

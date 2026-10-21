@@ -6,6 +6,7 @@ import Swal from 'sweetalert2'
 import LiveSearchSelect from '../components/LiveSearchSelect.vue'
 import LiveSearchMultiSelect from '../components/LiveSearchMultiSelect.vue'
 import ImagenPropiedadManager from '../components/ImagenPropiedadManager.vue'
+import { validarPropiedad, mensajeErrorPropiedad } from '../utils/propiedadValidation'
 
 // --- ESTADO GENERAL Y DATOS ---
 const propiedades = ref([])
@@ -437,7 +438,7 @@ const volverListado = () => {
 
 const resetPropiedadForm = () => {
   propiedadForm.value = {
-    id: null, propietario_ids: [], sector_urbano_id: '', tipo: 'Lote', codigo: '',
+    id: null, propietario_ids: [], sector_urbano_id: '', ubicacion_id: null, tipo: 'Lote', codigo: '',
     precio_venta: '', moneda: 'BOB', superficie_m2: '', superficie_construida_m2: '',
     frente_mts: '', fondo_mts: '', habitaciones: 0, banos: 0, es_esquina: false,
     direccion: '', colinda_norte: '', colinda_sur: '', colinda_este: '',
@@ -479,6 +480,12 @@ const resetUbicacionForm = () => {
 // 3. GUARDAR PROPIEDAD
 // ==========================================
 const guardar = async () => {
+  if (guardando.value) return;
+  erroresValidacion.value = validarPropiedad(propiedadForm.value);
+  if (Object.keys(erroresValidacion.value).length) {
+    await Swal.fire('Revisa el formulario', Object.values(erroresValidacion.value).flat().join('\n'), 'warning');
+    return;
+  }
   guardando.value = true;
   erroresValidacion.value = {};
   try {
@@ -497,7 +504,7 @@ const guardar = async () => {
     Swal.fire({ icon: 'success', title: 'Guardado', toast: true, position: 'top-end', timer: 3000, showConfirmButton: false });
   } catch (error) {
     if (error.response?.status === 422) erroresValidacion.value = error.response.data.errors;
-    Swal.fire('Error', 'Verifica los campos obligatorios', 'error');
+    Swal.fire('No se pudo guardar', mensajeErrorPropiedad(error), 'error');
   } finally {
     guardando.value = false;
   }
@@ -679,7 +686,13 @@ onMounted(() => cargarDatosBase(1));
       </div>
       
       <div class="card-body p-0">
-        <form @submit.prevent="guardar">
+        <form @submit.prevent="guardar" novalidate>
+          <div v-if="Object.keys(erroresValidacion).length" class="alert alert-danger m-4" role="alert">
+            <strong>Revisa estos datos antes de guardar:</strong>
+            <ul class="mb-0 mt-2">
+              <li v-for="(mensaje, index) in Object.values(erroresValidacion).flat()" :key="index">{{ mensaje }}</li>
+            </ul>
+          </div>
           <div class="row g-0">
             <div class="col-lg-6 p-4 border-end">
               <h6 class="fw-bold mb-3" style="color: var(--text-main);">Información General</h6>
@@ -751,7 +764,7 @@ onMounted(() => cargarDatosBase(1));
 
                 <div class="col-md-8">
                   <label class="form-label small fw-bold">Precio de Venta ({{ propiedadForm.moneda }}) *</label>
-                  <input type="number" step="0.01" class="form-control bg-light border-0 text-success fw-bold" v-model="propiedadForm.precio_venta" required>
+                  <input type="number" step="0.01" min="0" class="form-control bg-light border-0 text-success fw-bold" v-model="propiedadForm.precio_venta" :class="{'is-invalid': erroresValidacion.precio_venta}" required>
                 </div>
 
                 <!-- 
@@ -766,19 +779,19 @@ onMounted(() => cargarDatosBase(1));
                 -->
 
                 <div class="col-md-6">
-                  <label class="form-label small fw-bold">Frente (mts)</label>
-                  <input type="number" step="0.01" class="form-control" v-model="propiedadForm.frente_mts">
+                  <label class="form-label small fw-bold">Frente (mts, opcional)</label>
+                  <input type="number" step="0.01" min="0" class="form-control" v-model="propiedadForm.frente_mts" :class="{'is-invalid': erroresValidacion.frente_mts}">
                 </div>
 
                 <div class="col-md-6">
-                  <label class="form-label small fw-bold">Fondo (mts)</label>
-                  <input type="number" step="0.01" class="form-control" v-model="propiedadForm.fondo_mts">
+                  <label class="form-label small fw-bold">Fondo (mts, opcional)</label>
+                  <input type="number" step="0.01" min="0" class="form-control" v-model="propiedadForm.fondo_mts" :class="{'is-invalid': erroresValidacion.fondo_mts}">
                 </div>
 
                 <div class="col-md-6">
                   <label class="form-label small fw-bold text-primary">Sup. Terreno (m²) *</label>
-                  <input type="number" step="0.01" class="form-control bg-primary bg-opacity-10 border-0 fw-bold" v-model="propiedadForm.superficie_m2" readonly required>
-                  <div class="extra-small text-muted mt-1"><i class="bi bi-info-circle me-1"></i>Calculado automáticamente</div>
+                  <input type="number" step="0.01" min="0" class="form-control bg-primary bg-opacity-10 border-0 fw-bold" v-model="propiedadForm.superficie_m2" :class="{'is-invalid': erroresValidacion.superficie_m2}" required>
+                  <div class="extra-small text-muted mt-1"><i class="bi bi-info-circle me-1"></i>Ingresa la superficie o calcula con Frente × Fondo. Puedes ajustar el resultado.</div>
                 </div>
 
                 <div class="col-md-6" v-if="propiedadForm.tipo === 'Casa'">

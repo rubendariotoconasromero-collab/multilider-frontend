@@ -3,6 +3,7 @@ import { ref, computed } from 'vue'
 import api from '../api/axios'
 import Swal from 'sweetalert2'
 import { useAuthStore } from '../stores/auth'
+import ProfileMailManager from '../components/ProfileMailManager.vue'
 
 const authStore = useAuthStore()
 
@@ -333,6 +334,7 @@ const avatarUrl = computed(() =>
       </div>
 
     </div>
+    <ProfileMailManager :email="authStore.user?.correo || ''" />
   </div>
 </template>
 
