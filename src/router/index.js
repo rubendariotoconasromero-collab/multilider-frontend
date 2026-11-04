@@ -201,8 +201,9 @@ const router = createRouter({
 })
 
 // GUARDIA DE NAVEGACIÓN
-router.beforeEach((to) => {
+router.beforeEach(async (to) => {
   const authStore = useAuthStore()
+  await authStore.restoreSession()
   const isAuthenticated = !!authStore.token
   const esCliente = authStore.isCliente
 

@@ -37,3 +37,8 @@ __screenshots__/
 
 # Vite
 *.timestamp-*-*.mjs
+
+/.worktrees/
+/test-results/
+/playwright-report/
+/.phase3/

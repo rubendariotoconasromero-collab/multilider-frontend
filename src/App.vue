@@ -67,6 +67,10 @@ onUnmounted(() => clearInterval(themeTimer))
 </script>
 
 <template>
+  <div v-if="authStore.sessionUnavailable" class="alert alert-warning mb-0" role="status">
+    No se pudo comprobar tu sesión. El servicio de acceso está temporalmente indisponible.
+    <button class="btn btn-sm btn-outline-secondary ms-2" @click="authStore.restoreSession(true)">Reintentar</button>
+  </div>
   <!-- Layout Público (Landing) -->
   <div v-if="layout === 'public'" class="public-layout">
     <RouterView />

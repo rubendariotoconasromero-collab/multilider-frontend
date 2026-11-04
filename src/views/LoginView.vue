@@ -39,6 +39,8 @@ const iniciarTemporizador = (segundos) => {
 }
 
 onMounted(() => {
+  const notice = sessionStorage.getItem('auth_logout_notice')
+  if (notice) { errorMensaje.value = notice; sessionStorage.removeItem('auth_logout_notice') }
   companyStore.fetchLandingData()
 })
 
@@ -85,7 +87,7 @@ const iniciarSesion = async () => {
     } else {
       errorMensaje.value = "Error de conexión con el servidor."
     }
-    console.error("Detalle del error:", error)
+    console.error("No se pudo iniciar sesión.")
   } finally {
     cargando.value = false
   }

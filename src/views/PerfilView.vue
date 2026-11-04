@@ -79,7 +79,8 @@ const cambiarPassword = async () => {
   erroresPass.value = {}
   guardandoPass.value = true
   try {
-    await api.put('/perfil/cambiar-password', passForm.value)
+    const result = await api.put('/perfil/cambiar-password', passForm.value)
+    if (result.data.reauth_required) { await authStore.requireReauthentication(); return }
     passForm.value = { password_actual: '', password_nuevo: '', password_nuevo_confirmation: '' }
     mostrarActual.value = false
     mostrarNueva.value = false
