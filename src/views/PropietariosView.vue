@@ -1,4 +1,5 @@
 <script setup>
+import { catalogCommand } from '../utils/catalogCommands'
 import { ref, onMounted, computed } from 'vue'
 import api from '../api/axios'
 import Swal from 'sweetalert2'
@@ -83,9 +84,9 @@ const guardarPropietario = async () => {
   guardando.value = true
   try {
     if (isEditing.value) {
-      await api.put(`/propietarios/${propietarioForm.value.id}`, propietarioForm.value)
+      await catalogCommand(api, 'put', `/propietarios/${propietarioForm.value.id}`, propietarioForm.value)
     } else {
-      await api.post('/propietarios', propietarioForm.value)
+      await catalogCommand(api, 'post', '/propietarios', propietarioForm.value)
     }
     await cargarDatosBase(currentPage.value)
     guardando.value = false
@@ -122,7 +123,7 @@ const toggleEstadoPropietario = async (prop) => {
   }).then(async (result) => {
     if (result.isConfirmed) {
       try {
-        await api.delete(`/propietarios/${prop.id}`)
+        await catalogCommand(api, 'delete', `/propietarios/${prop.id}`)
         await cargarDatosBase(currentPage.value)
         Swal.fire({ title: '¡Éxito!', icon: 'success', showConfirmButton: false, timer: 1500 })
       } catch {

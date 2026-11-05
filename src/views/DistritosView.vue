@@ -1,4 +1,5 @@
 <script setup>
+import { catalogCommand } from '../utils/catalogCommands'
 import { ref, onMounted, watch } from 'vue'
 import api from '../api/axios'
 import Swal from 'sweetalert2'
@@ -104,9 +105,9 @@ const guardarDistrito = async () => {
   guardando.value = true
   try {
     if (isEditing.value) {
-      await api.put(`/distritos/${distritoForm.value.id}`, distritoForm.value)
+      await catalogCommand(api, 'put', `/distritos/${distritoForm.value.id}`, distritoForm.value)
     } else {
-      await api.post('/distritos', distritoForm.value)
+      await catalogCommand(api, 'post', '/distritos', distritoForm.value)
     }
     await cargarDistritos(pagination.value.current_page)
     btnCerrarModal.value.click()
@@ -141,7 +142,7 @@ const toggleEstadoDistrito = (item) => {
   }).then(async (result) => {
     if (result.isConfirmed) {
       try {
-        await api.delete(`/distritos/${item.id}`)
+        await catalogCommand(api, 'delete', `/distritos/${item.id}`)
         await cargarDistritos(pagination.value.current_page)
         Swal.fire({ title: `¡${isActivo ? 'Desactivado' : 'Activado'}!`, icon: 'success', confirmButtonColor: 'var(--primary-color)' })
       } catch {
@@ -160,7 +161,7 @@ const guardarCiudadRapida = async () => {
   erroresValidacionCiudad.value = {}
   guardandoCiudad.value = true
   try {
-    const res = await api.post('/ciudades', ciudadForm.value)
+    const res = await catalogCommand(api, 'post', '/ciudades', ciudadForm.value)
     await cargarCiudades()
     distritoForm.value.ciudad_id = res.data.data.id
     btnCerrarModalCiudad.value.click()

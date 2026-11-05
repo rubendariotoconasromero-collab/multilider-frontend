@@ -1,4 +1,5 @@
 <script setup>
+import { catalogCommand } from '../utils/catalogCommands'
 import { ref, onMounted, watch } from 'vue'
 import api from '../api/axios'
 import Swal from 'sweetalert2'
@@ -114,9 +115,9 @@ const guardarCarac = async () => {
   guardando.value = true
   try {
     if (isEditing.value) {
-      await api.put(`/caracteristicas/${caracForm.value.id}`, caracForm.value)
+      await catalogCommand(api, 'put', `/caracteristicas/${caracForm.value.id}`, caracForm.value)
     } else {
-      await api.post('/caracteristicas', caracForm.value)
+      await catalogCommand(api, 'post', '/caracteristicas', caracForm.value)
     }
 
     await cargarCaracteristicas(pagination.value.current_page)
@@ -163,7 +164,7 @@ const toggleEstadoCarac = (item) => {
   }).then(async (result) => {
     if (result.isConfirmed) {
       try {
-        await api.delete(`/caracteristicas/${item.id}`)
+        await catalogCommand(api, 'delete', `/caracteristicas/${item.id}`)
         await cargarCaracteristicas(pagination.value.current_page)
         Swal.fire('¡Hecho!', `La característica ha sido ${isActivo ? 'desactivada' : 'activada'}.`, 'success')
       } catch (error) {

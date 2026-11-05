@@ -2,6 +2,8 @@
 import { ref, watch } from 'vue'
 import api from '../api/axios'
 import Swal from 'sweetalert2'
+import CatalogImage from './CatalogImage.vue'
+import { catalogCommand } from '../utils/catalogCommands'
 
 const props = defineProps({
   propiedadId: {
@@ -26,9 +28,6 @@ watch(() => props.imagenes, (newVal) => {
 const subiendo = ref(false)
 const inputArchivos = ref(null)
 
-// URL base para las imágenes (ajustar según el backend)
-const baseUrl = import.meta.env.VITE_API_URL
-
 const handleFileSelect = () => {
   inputArchivos.value.click()
 }
@@ -36,6 +35,7 @@ const handleFileSelect = () => {
 const onFileChange = async (e) => {
   const files = e.target.files
   if (!files.length) return
+  if (files.length > 10 || Array.from(files).some(f => f.size > 2048 * 1024 || !['image/jpeg','image/png','image/gif'].includes(f.type))) { await Swal.fire('Revisa las imágenes', 'Selecciona hasta 10 imágenes JPEG, PNG o GIF de máximo 2 MiB cada una.', 'warning'); return }
 
   const formData = new FormData()
   for (let i = 0; i < files.length; i++) {
@@ -44,11 +44,7 @@ const onFileChange = async (e) => {
 
   subiendo.value = true
   try {
-    const res = await api.post(`/propiedades/${props.propiedadId}/imagenes`, formData, {
-      headers: {
-        'Content-Type': 'multipart/form-data'
-      }
-    })
+    await catalogCommand(api, 'post', `/propiedades/${props.propiedadId}/imagenes`, formData)
     
     // Notificar al padre para que recargue la propiedad completa
     // Esto asegura que tanto el listado como el modal estén sincronizados
@@ -87,7 +83,7 @@ const eliminarImagen = async (id) => {
 
   if (result.isConfirmed) {
     try {
-      await api.delete(`/imagenes-propiedades/${id}`)
+      await catalogCommand(api, 'delete', `/imagenes-propiedades/${id}`)
       imagenesLocal.value = imagenesLocal.value.filter(img => img.id !== id)
       emit('updated')
       Swal.fire({
@@ -106,7 +102,7 @@ const eliminarImagen = async (id) => {
 
 const marcarPrincipal = async (id) => {
   try {
-    await api.patch(`/imagenes-propiedades/${id}/principal`)
+    await catalogCommand(api, 'patch', `/imagenes-propiedades/${id}/principal`)
     
     // Actualizar estado local
     imagenesLocal.value = imagenesLocal.value.map(img => ({
@@ -129,10 +125,6 @@ const marcarPrincipal = async (id) => {
   }
 }
 
-const getFullUrl = (url) => {
-  if (url.startsWith('http')) return url
-  return `${baseUrl}${url}`
-}
 </script>
 
 <template>
@@ -171,7 +163,7 @@ const getFullUrl = (url) => {
       <div v-for="img in imagenesLocal" :key="img.id" class="col-6 col-md-4 col-lg-3">
         <div class="card h-100 border-0 shadow-sm overflow-hidden image-card" :class="{'border-primary-main': img.es_principal}">
           <div class="position-relative">
-            <img :src="getFullUrl(img.url)" class="card-img-top object-fit-cover" alt="Imagen propiedad" style="height: 160px;">
+            <CatalogImage :client="api" :image="img" class="card-img-top object-fit-cover" alt="Imagen propiedad" style="height: 160px;"  />
             
             <div class="position-absolute top-0 end-0 p-2 d-flex flex-column gap-1">
               <button 

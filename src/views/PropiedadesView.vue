@@ -3,6 +3,8 @@ import { ref, onMounted, nextTick, computed, watch } from 'vue'
 import { importLibrary, setOptions } from '@googlemaps/js-api-loader'
 import api from '../api/axios'
 import Swal from 'sweetalert2'
+import CatalogImage from '../components/CatalogImage.vue'
+import { loadOptions, catalogCommand } from '../utils/catalogCommands'
 import LiveSearchSelect from '../components/LiveSearchSelect.vue'
 import LiveSearchMultiSelect from '../components/LiveSearchMultiSelect.vue'
 import ImagenPropiedadManager from '../components/ImagenPropiedadManager.vue'
@@ -29,7 +31,9 @@ const btnCerrarModal = ref(null) // Mantener referencia para compatibilidad o el
 const erroresValidacion = ref({})
 const propiedadSeleccionada = ref(null)
 
-const baseUrl = import.meta.env.VITE_API_URL
+const catalogApi = api
+const formVersion = ref(null)
+const canEditEstado = ref(false)
 
 // Para gestión de características
 const caracSearch = ref('')
@@ -224,8 +228,8 @@ const procesarUrlMaps = async () => {
 const cargarSectoresPorDistrito = async (distritoId) => {
   if (!distritoId) { sectoresUrbanos.value = []; return }
   try {
-    const res = await api.get(`/sectores-urbanos/por-distrito/${distritoId}`)
-    sectoresUrbanos.value = res.data
+    const res = await loadOptions(catalogApi, 'sectores')
+    sectoresUrbanos.value = res.data.data.filter(s => Number(s.distrito_id) === Number(distritoId))
   } catch (error) {
     console.error('Error al cargar sectores:', error)
     sectoresUrbanos.value = []
@@ -245,12 +249,13 @@ const cargarDatosBase = async (page = 1) => {
     cargando.value = true;
 
     const [resProp, resOwn, resDist] = await Promise.all([
-      api.get(`/propiedades?page=${page}&search=${searchQuery.value}`),
-      api.get('/propietarios?per_page=1000'),
-      api.get('/distritos?per_page=1000')
+      catalogApi.get(`/propiedades?page=${page}&search=${searchQuery.value}`),
+      loadOptions(catalogApi, 'propietarios'),
+      loadOptions(catalogApi, 'distritos')
     ]);
 
     propiedades.value = resProp.data.data;
+    canEditEstado.value = resOwn.capabilities.can_edit_estado;
     currentPage.value = resProp.data.current_page;
     totalPages.value = resProp.data.last_page;
 
@@ -285,7 +290,13 @@ const paginasVisibles = computed(() => {
 // ==========================================
 // 2. NAVEGACIÓN Y PREPARAR DATOS
 // ==========================================
-const irFormulario = (prop = null) => {
+const irFormulario = async (prop = null) => {
+  if (prop) {
+    try { const detail = await catalogApi.get(`/propiedades/${prop.id}`); prop = detail.data.data || detail.data }
+    catch { await Swal.fire('Error', 'No se pudo cargar la versión actual de la propiedad.', 'error'); return }
+  }
+  formVersion.value = prop?.version || null;
+  if (prop?.capabilities) canEditEstado.value = prop.capabilities.can_edit_estado;
   erroresValidacion.value = {};
   if (prop) {
     isEditing.value = true;
@@ -355,7 +366,7 @@ const irGestionCaracteristicas = async (prop) => {
   try {
     // 1. Cargar catálogo de características si no está cargado
     if (allCaracteristicas.value.length === 0) {
-      const res = await api.get('/caracteristicas', { params: { per_page: 1000 } });
+      const res = await loadOptions(catalogApi, 'caracteristicas');
       allCaracteristicas.value = res.data.data;
     }
 
@@ -381,7 +392,7 @@ const irGestionImagenes = (prop) => {
 const recargarPropiedad = async () => {
   if (!propiedadSeleccionada.value) return
   try {
-    const res = await api.get(`/propiedades/${propiedadSeleccionada.value.id}`)
+    const res = await catalogApi.get(`/propiedades/${propiedadSeleccionada.value.id}`)
     // El backend puede devolver el objeto directo o envuelto en 'data'
     const propActualizada = res.data.data || res.data
     
@@ -413,7 +424,7 @@ const guardarCaracteristicas = async () => {
     // Según contexto_api_caracteristicas: Se deben enviar los IDs para sincronizarlos
     // Usamos el endpoint de actualización de propiedad enviando solo los carac_ids si el backend lo soporta, 
     // o el objeto completo. Basado en el estándar de otros módulos, enviaremos al sync.
-    await api.post(`/propiedades/${propiedadSeleccionada.value.id}/caracteristicas/sync`, {
+    await catalogCommand(catalogApi, 'post', `/propiedades/${propiedadSeleccionada.value.id}/caracteristicas/sync`, {
       caracteristica_ids: ids
     });
 
@@ -489,15 +500,10 @@ const guardar = async () => {
   guardando.value = true;
   erroresValidacion.value = {};
   try {
-    let ubiId = propiedadForm.value.ubicacion_id;
-    const resUbi = ubiId 
-      ? await api.put(`/ubicaciones/${ubiId}`, ubicacionForm.value)
-      : await api.post('/ubicaciones', ubicacionForm.value);
-    
-    if (!ubiId) propiedadForm.value.ubicacion_id = resUbi.data.data.id;
-
-    if (isEditing.value) await api.put(`/propiedades/${propiedadForm.value.id}`, propiedadForm.value);
-    else await api.post('/propiedades', propiedadForm.value);
+    const payload = { ...propiedadForm.value, ubicacion: { ...ubicacionForm.value } };
+    delete payload.id;
+    if (!canEditEstado.value) delete payload.estado;
+    await catalogCommand(catalogApi, isEditing.value ? 'put' : 'post', isEditing.value ? `/propiedades/${propiedadForm.value.id}` : '/propiedades', payload, formVersion.value);
 
     await cargarDatosBase(currentPage.value);
     volverListado();
@@ -524,7 +530,7 @@ const toggleActivo = async (prop) => {
   }).then(async (result) => {
     if (result.isConfirmed) {
       try {
-        await api.delete(`/propiedades/${prop.id}`);
+        await catalogCommand(catalogApi, 'delete', `/propiedades/${prop.id}`);
         await cargarDatosBase(currentPage.value);
         Swal.fire({ title: `¡Éxito!`, icon: 'success', showConfirmButton: false, timer: 1500 });
       } catch (error) {
@@ -597,9 +603,9 @@ onMounted(() => cargarDatosBase(1));
                 <tr v-for="prop in propiedades" :key="prop.id">
                   <td class="ps-4">
                     <div class="rounded overflow-hidden bg-light d-flex align-items-center justify-content-center" style="width: 50px; height: 50px;">
-                      <img v-if="prop.imagenes?.find(i => i.es_principal) || prop.imagenes?.[0]" 
-                           :src="baseUrl + (prop.imagenes.find(i => i.es_principal)?.url || prop.imagenes[0].url)" 
-                           class="w-100 h-100 object-fit-cover">
+                      <CatalogImage :client="catalogApi" v-if="prop.imagenes?.find(i => i.es_principal) || prop.imagenes?.[0]"
+                           :image="prop.imagenes.find(i => i.es_principal) || prop.imagenes[0]"
+                           class="w-100 h-100 object-fit-cover" />
                       <svg v-else-if="prop.tipo === 'Casa'" xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.75" stroke-linecap="round" stroke-linejoin="round" class="w-100 h-100 p-2" style="color: #55585d; background-color: #e9ecef;" title="Casa">
                         <path d="M3 10.182V19.8c0 .663.537 1.2 1.2 1.2h15.6c.663 0 1.2-.537 1.2-1.2V10.182c0-.332-.138-.65-.382-.88l-7.8-7.391a1.2 1.2 0 0 0-1.636 0l-7.8 7.39a1.2 1.2 0 0 0-.382.882z" />
                         <path d="M9 21v-6a1 1 0 0 1 1-1h4a1 1 0 0 1 1 1v6" />
@@ -699,7 +705,7 @@ onMounted(() => cargarDatosBase(1));
               <div class="row g-3">
                 <div class="col-md-6" v-if="isEditing">
                   <label class="form-label small fw-bold">Código</label>
-                  <input type="text" class="form-control bg-light border-0 text-uppercase" v-model="propiedadForm.codigo" :class="{'is-invalid': erroresValidacion.codigo}">
+                  <input type="text" class="form-control bg-light border-0 text-uppercase" aria-label="Código de propiedad" v-model="propiedadForm.codigo" :class="{'is-invalid': erroresValidacion.codigo}">
                 </div>
                 <div class="col-md-6">
                   <label class="form-label small fw-bold">Tipo *</label>
@@ -724,7 +730,7 @@ onMounted(() => cargarDatosBase(1));
                 <div class="col-md-6">
                   <label class="form-label small fw-bold">Sector Urbano *</label>
                   <select class="form-select bg-light border-0 shadow-none"
-                          v-model="propiedadForm.sector_urbano_id"
+                          aria-label="Sector urbano" v-model="propiedadForm.sector_urbano_id"
                           :class="{'is-invalid': erroresValidacion.sector_urbano_id}"
                           :disabled="!formDistritoId || !sectoresUrbanos.length">
                     <option value="">{{ formDistritoId ? 'Selecciona sector...' : 'Primero selecciona distrito' }}</option>
@@ -764,7 +770,7 @@ onMounted(() => cargarDatosBase(1));
 
                 <div class="col-md-8">
                   <label class="form-label small fw-bold">Precio de Venta ({{ propiedadForm.moneda }}) *</label>
-                  <input type="number" step="0.01" min="0" class="form-control bg-light border-0 text-success fw-bold" v-model="propiedadForm.precio_venta" :class="{'is-invalid': erroresValidacion.precio_venta}" required>
+                  <input type="text" inputmode="decimal" step="0.01" min="0" class="form-control bg-light border-0 text-success fw-bold" aria-label="Precio de venta" v-model="propiedadForm.precio_venta" :class="{'is-invalid': erroresValidacion.precio_venta}" required>
                 </div>
 
                 <!-- 
@@ -780,23 +786,23 @@ onMounted(() => cargarDatosBase(1));
 
                 <div class="col-md-6">
                   <label class="form-label small fw-bold">Frente (mts, opcional)</label>
-                  <input type="number" step="0.01" min="0" class="form-control" v-model="propiedadForm.frente_mts" :class="{'is-invalid': erroresValidacion.frente_mts}">
+                  <input type="text" inputmode="decimal" step="0.01" min="0" class="form-control" v-model="propiedadForm.frente_mts" :class="{'is-invalid': erroresValidacion.frente_mts}">
                 </div>
 
                 <div class="col-md-6">
                   <label class="form-label small fw-bold">Fondo (mts, opcional)</label>
-                  <input type="number" step="0.01" min="0" class="form-control" v-model="propiedadForm.fondo_mts" :class="{'is-invalid': erroresValidacion.fondo_mts}">
+                  <input type="text" inputmode="decimal" step="0.01" min="0" class="form-control" v-model="propiedadForm.fondo_mts" :class="{'is-invalid': erroresValidacion.fondo_mts}">
                 </div>
 
                 <div class="col-md-6">
                   <label class="form-label small fw-bold text-primary">Sup. Terreno (m²) *</label>
-                  <input type="number" step="0.01" min="0" class="form-control bg-primary bg-opacity-10 border-0 fw-bold" v-model="propiedadForm.superficie_m2" :class="{'is-invalid': erroresValidacion.superficie_m2}" required>
+                  <input type="text" inputmode="decimal" step="0.01" min="0" class="form-control bg-primary bg-opacity-10 border-0 fw-bold" aria-label="Superficie del terreno" v-model="propiedadForm.superficie_m2" :class="{'is-invalid': erroresValidacion.superficie_m2}" required>
                   <div class="extra-small text-muted mt-1"><i class="bi bi-info-circle me-1"></i>Ingresa la superficie o calcula con Frente × Fondo. Puedes ajustar el resultado.</div>
                 </div>
 
                 <div class="col-md-6" v-if="propiedadForm.tipo === 'Casa'">
                   <label class="form-label small fw-bold">Sup. Construida (m²)</label>
-                  <input type="number" step="0.01" class="form-control" v-model="propiedadForm.superficie_construida_m2">
+                  <input type="text" inputmode="decimal" step="0.01" class="form-control" v-model="propiedadForm.superficie_construida_m2">
                 </div>
 
                 <template v-if="propiedadForm.tipo === 'Casa'">
@@ -901,14 +907,14 @@ onMounted(() => cargarDatosBase(1));
              <!-- Galería en Detalle -->
              <div v-if="propiedadSeleccionada.imagenes?.length" class="mb-4">
                 <div class="main-image-container rounded overflow-hidden shadow-sm mb-2 border" style="height: 300px;">
-                  <img :src="baseUrl + (propiedadSeleccionada.imagenes.find(i => i.es_principal)?.url || propiedadSeleccionada.imagenes[0].url)" 
-                       class="w-100 h-100 object-fit-cover">
+                  <CatalogImage :client="catalogApi" :image="propiedadSeleccionada.imagenes.find(i => i.es_principal) || propiedadSeleccionada.imagenes[0]"
+                       class="w-100 h-100 object-fit-cover" />
                 </div>
                 <div class="d-flex gap-2 overflow-x-auto pb-2">
                   <div v-for="img in propiedadSeleccionada.imagenes" :key="img.id" 
                        class="rounded overflow-hidden border cursor-pointer flex-shrink-0" 
                        style="width: 80px; height: 60px;">
-                    <img :src="baseUrl + img.url" class="w-100 h-100 object-fit-cover">
+                    <CatalogImage :client="catalogApi" :image="img" class="w-100 h-100 object-fit-cover"  />
                   </div>
                 </div>
              </div>

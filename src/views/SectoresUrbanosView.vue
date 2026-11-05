@@ -1,4 +1,5 @@
 <script setup>
+import { catalogCommand } from '../utils/catalogCommands'
 import { ref, onMounted, watch } from 'vue'
 import api from '../api/axios'
 import Swal from 'sweetalert2'
@@ -163,9 +164,9 @@ const guardarSector = async () => {
   try {
     const payload = { ...sectorForm.value }
     if (isEditing.value) {
-      await api.put(`/sectores-urbanos/${sectorForm.value.id}`, payload)
+      await catalogCommand(api, 'put', `/sectores-urbanos/${sectorForm.value.id}`, payload)
     } else {
-      await api.post('/sectores-urbanos', payload)
+      await catalogCommand(api, 'post', '/sectores-urbanos', payload)
     }
     await cargarSectores(pagination.value.current_page)
     btnCerrarModal.value.click()
@@ -200,7 +201,7 @@ const toggleEstadoSector = (item) => {
   }).then(async (result) => {
     if (result.isConfirmed) {
       try {
-        await api.delete(`/sectores-urbanos/${item.id}`)
+        await catalogCommand(api, 'delete', `/sectores-urbanos/${item.id}`)
         await cargarSectores(pagination.value.current_page)
         Swal.fire({ title: `¡${isActivo ? 'Desactivado' : 'Activado'}!`, icon: 'success', confirmButtonColor: 'var(--primary-color)' })
       } catch {

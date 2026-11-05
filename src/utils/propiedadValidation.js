@@ -24,6 +24,8 @@ export function mensajeErrorPropiedad(error) {
     const mensajes = Object.values(error.response.data?.errors ?? {}).flat()
     return mensajes.length ? mensajes.join('\n') : 'Revisa los datos del formulario.'
   }
+  if (!error.response && error.message && !error.isAxiosError) return error.message
+  if ([409,412,428].includes(error.response?.status)) return 'La propiedad cambió o tiene una reserva vigente. Recarga los datos antes de continuar.'
   if (!error.response) return 'No se pudo conectar con el servidor. Comprueba tu conexión e intenta nuevamente.'
   if (error.response.status === 401) return 'Tu sesión ha caducado. Inicia sesión nuevamente.'
   if (error.response.status === 403) return 'No tienes permisos para guardar esta propiedad.'

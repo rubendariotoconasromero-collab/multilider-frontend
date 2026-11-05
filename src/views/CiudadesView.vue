@@ -1,4 +1,5 @@
 <script setup>
+import { catalogCommand } from '../utils/catalogCommands'
 import { ref, onMounted, computed, watch } from 'vue'
 import api from '../api/axios'
 import Swal from 'sweetalert2'
@@ -108,9 +109,9 @@ const guardarCiudad = async () => {
   guardando.value = true
   try {
     if (isEditing.value) {
-      await api.put(`/ciudades/${ciudadForm.value.id}`, ciudadForm.value)
+      await catalogCommand(api, 'put', `/ciudades/${ciudadForm.value.id}`, ciudadForm.value)
     } else {
-      await api.post('/ciudades', ciudadForm.value)
+      await catalogCommand(api, 'post', '/ciudades', ciudadForm.value)
     }
 
     await cargarCiudades(pagination.value.current_page)
@@ -158,7 +159,7 @@ const toggleEstadoCiudad = (item) => {
   }).then(async (result) => {
     if (result.isConfirmed) {
       try {
-        await api.delete(`/ciudades/${item.id}`)
+        await catalogCommand(api, 'delete', `/ciudades/${item.id}`)
         await cargarCiudades(pagination.value.current_page)
         Swal.fire({
           title: `¡${isActivo ? 'Desactivada' : 'Activada'}!`,
