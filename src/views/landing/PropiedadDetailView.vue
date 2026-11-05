@@ -63,7 +63,7 @@ const loadData = async (id) => {
   await Promise.all([
     store.fetchPropiedad(id),
     store.fetchSimilares(id),
-    !store.company ? store.fetchLandingData() : Promise.resolve()
+    !store.company ? store.fetchCompany() : Promise.resolve()
   ])
 }
 

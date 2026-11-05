@@ -49,6 +49,12 @@ const urlPago = ref('')
 const qrUrl = ref('')
 const idTransaccion = ref('')
 const estadoPago = ref('PENDIENTE')
+const storageKey = 'payment-test-reference:' + import.meta.env.VITE_API_URL
+const uuidFormat = /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i
+let remembered = ''
+try { remembered = sessionStorage.getItem(storageKey) || '' } catch { /* optional recovery storage */ }
+if (!uuidFormat.test(remembered)) remembered = ''
+const operacionPrueba = ref(remembered || crypto.randomUUID())
 let pollingInterval = null
 let pollingTimeout  = null   // handle del setTimeout de 15 min
 let pollingBusy     = false  // guard: evita peticiones solapadas
@@ -60,36 +66,11 @@ const pagoIdsSeleccionados = computed(() => {
   return ids
 })
 
-const totalSeleccionado = computed(() => {
-  let total = 0
-  if (pagoContadoSeleccionado.value) {
-    const p = pagosContado.value.find(p => p.id === pagoContadoSeleccionado.value)
-    if (p) total += parseFloat(p.monto)
-  }
-  cuotasSeleccionadas.value.forEach(cid => {
-    const c = cuotasPendientes.value.find(c => c.cuota_id === cid)
-    if (c) total += parseFloat(c.monto_cuota)
-  })
-  return total.toFixed(2)
-})
-
-const monedaDetectada = computed(() => {
-  if (pagoContadoSeleccionado.value) {
-    const p = pagosContado.value.find(p => p.id === pagoContadoSeleccionado.value)
-    if (p) return p.moneda
-  }
-  if (cuotasSeleccionadas.value.length) {
-    const c = cuotasPendientes.value.find(c => c.cuota_id === cuotasSeleccionadas.value[0])
-    if (c) return c.moneda
-  }
-  return 'Bs'
-})
+const totalSeleccionado = computed(() => ((pagoIdsSeleccionados.value.length + cuotasSeleccionadas.value.length) * 0.20).toFixed(2))
 
 const haySeleccion = computed(() =>
   pagoContadoSeleccionado.value !== null || cuotasSeleccionadas.value.length > 0
 )
-
-const hayMontosUSD = computed(() => haySeleccion.value && monedaDetectada.value === 'USD')
 
 const formularioPagadorValido = computed(() => {
   const f = formPagador.value
@@ -98,7 +79,7 @@ const formularioPagadorValido = computed(() => {
 
 // ── Paso 1: Buscar cliente ────────────────────────────────────────────────────
 const buscarCliente = async () => {
-  if (!ciInput.value.trim()) return
+  if (!ciInput.value.trim() || !companyStore.testPaymentsAvailable) return
   errorBusqueda.value = ''
   buscando.value = true
   try {
@@ -144,10 +125,13 @@ const irPaso3 = () => {
 
 // ── Paso 3: Procesar ─────────────────────────────────────────────────────────
 const procesarPago = async () => {
+  if (procesando.value || !companyStore.testPaymentsAvailable) return
   erroresPagador.value = {}
   procesando.value = true
+  try { sessionStorage.setItem(storageKey, operacionPrueba.value) } catch { /* do not store payer details */ }
   try {
     const payload = {
+      operacion_id: operacionPrueba.value,
       pago_ids:   pagoIdsSeleccionados.value,
       cuota_ids:  cuotasSeleccionadas.value,
       cliente_id: cliente.value.id,
@@ -159,7 +143,7 @@ const procesarPago = async () => {
     qrUrl.value = res.data.qr_url || ''
     estadoPago.value = 'PENDIENTE'
 
-    if (companyStore.libelulaEnabled === 0) {
+    if (urlPago.value && companyStore.libelulaEnabled === 0) {
       // Modo 0: redirige en la misma pestaña, sin mostrar el paso 4
       window.location.href = urlPago.value
       return
@@ -168,7 +152,7 @@ const procesarPago = async () => {
     step.value = 4
     iniciarPolling()
 
-    if (companyStore.libelulaEnabled === 2) {
+    if (urlPago.value && companyStore.libelulaEnabled === 2) {
       // Modo 2: abre la pasarela en popup; BroadcastChannel notifica esta pestaña al completar
       abrirPopup()
     }
@@ -187,8 +171,10 @@ const procesarPago = async () => {
 const pagoChannel = new BroadcastChannel('multilider_pagos')
 
 // ── Paso 4: Polling ───────────────────────────────────────────────────────────
-const confirmarPago = () => {
-  estadoPago.value = 'PAGADO'
+const confirmarPago = (data) => {
+  if (data?.estado !== 'PAGADO_PRUEBA') return
+  estadoPago.value = 'PAGADO_PRUEBA'
+  try { sessionStorage.removeItem(storageKey) } catch { /* storage optional */ }
   detenerPolling()
 }
 
@@ -200,7 +186,7 @@ const iniciarPolling = () => {
     pollingBusy = true
     try {
       const res = await api.get(`/public/pagos/verificar/${idTransaccion.value}`)
-      if (res.data.estado === 'PAGADO') confirmarPago()
+      if (res.data.estado === 'PAGADO_PRUEBA') confirmarPago(res.data)
     } catch (err) {
       if (err.response?.status === 404) detenerPolling()  // txn inválida, detener
     } finally {
@@ -222,32 +208,41 @@ const detenerPolling = () => {
 onMounted(async () => {
   isDark.value = document.documentElement.getAttribute('data-theme') === 'dark'
 
-  const txn = route.query.txn
+  const txn = route.query.txn || (remembered ? `TEMP-${remembered}` : null)
 
   if (!txn) {
     // Registrar el listener ANTES de cualquier await para evitar la race condition
-    // donde el mensaje del BroadcastChannel llega mientras fetchLandingData está en curso
+    // donde el mensaje del BroadcastChannel llega mientras fetchCompany está en curso
     pagoChannel.onmessage = (event) => {
       if (event.data?.tipo === 'PAGO_CONFIRMADO' && event.data.txn === idTransaccion.value) {
-        confirmarPago()
+        verificarPago()
       }
     }
   }
 
   // Hidratar datos de empresa si se recargó directamente esta página
   if (!companyStore.company) {
-    await companyStore.fetchLandingData()
+    await companyStore.fetchCompany().catch(() => {})
   }
 
   if (txn) {
-    // Pestaña de retorno: Libélula redirigió aquí tras el pago
     idTransaccion.value = txn
     step.value = 4
-    estadoPago.value = 'PAGADO'
-    pagoChannel.postMessage({ tipo: 'PAGO_CONFIRMADO', txn })
+    estadoPago.value = 'PENDIENTE'
     try {
-      await api.post('/public/pagos/confirmar-retorno', { id_transaccion: txn })
-    } catch { /* silent: el estado ya se marcó como PAGADO en la UI */ }
+      const result = await api.post('/public/pagos/confirmar-retorno', { id_transaccion: txn })
+      urlPago.value = result.data.url_pago || ''
+      qrUrl.value = result.data.qr_url || ''
+      if (result.data.estado === 'PAGADO_PRUEBA') {
+        confirmarPago(result.data)
+        pagoChannel.postMessage({ tipo: 'PAGO_CONFIRMADO', txn })
+      } else iniciarPolling()
+    } catch (error) {
+      if (error.response?.status === 404 && !route.query.txn) {
+        step.value = 1
+        errorBusqueda.value = 'Todavía no encontramos la orden. Si reenvías los mismos datos se conservará la referencia.'
+      } else iniciarPolling()
+    }
   }
 })
 
@@ -283,8 +278,8 @@ const verificarPago = async () => {
   verificandoPago.value = true
   try {
     const res = await api.get(`/public/pagos/verificar/${idTransaccion.value}`)
-    if (res.data.estado === 'PAGADO') {
-      confirmarPago()
+    if (res.data.estado === 'PAGADO_PRUEBA') {
+      confirmarPago(res.data)
     } else {
       tipoMensaje.value = 'error'
       mensajeVerificacion.value = 'Aún no confirmamos tu pago. Si ya pagaste, espera unos segundos e intenta nuevamente.'
@@ -297,6 +292,7 @@ const verificarPago = async () => {
   }
 }
 const nuevoPago = () => {
+  operacionPrueba.value = crypto.randomUUID()
   step.value = 1; ciInput.value = ''; errorBusqueda.value = ''
   cliente.value = null; pagosContado.value = []; cuotasPendientes.value = []
   cuotasSeleccionadas.value = []; pagoContadoSeleccionado.value = null
@@ -316,6 +312,13 @@ const formatMonto = (m) => new Intl.NumberFormat('es-BO').format(m)
 </script>
 
 <template>
+  <div class="alert alert-warning text-center mb-0" role="status">Modo de prueba: Bs 0,20 por concepto. La prueba no liquida la deuda real.</div>
+  <div v-if="step === 4 && estadoPago !== 'PAGADO_PRUEBA' && !cliente" class="alert alert-info text-center" role="status">
+    Estamos verificando la prueba de pago.
+    <button v-if="urlPago" class="btn btn-sm btn-outline-primary ms-2" @click="abrirPagina">Abrir pasarela</button>
+    <button class="btn btn-sm btn-outline-primary ms-2" @click="verificarPago" :disabled="verificandoPago">Verificar resultado</button>
+  </div>
+  <div v-if="!companyStore.testPaymentsAvailable && step === 1" class="alert alert-secondary text-center">El registro de nuevas pruebas no está disponible.</div>
   <div class="pp-bg min-vh-100 d-flex flex-column">
 
     <!-- Header -->
@@ -381,7 +384,7 @@ const formatMonto = (m) => new Intl.NumberFormat('es-BO').format(m)
               <button
                 class="btn btn-primary px-4 fw-bold"
                 @click="buscarCliente"
-                :disabled="buscando || !ciInput.trim()"
+                :disabled="buscando || !ciInput.trim() || !companyStore.testPaymentsAvailable"
               >
                 <span v-if="buscando" class="spinner-border spinner-border-sm me-1"></span>
                 {{ buscando ? 'Buscando…' : 'Buscar' }}
@@ -399,7 +402,7 @@ const formatMonto = (m) => new Intl.NumberFormat('es-BO').format(m)
         </div>
 
         <!-- ═══ PASOS 2, 3 y 4: SELECCIÓN, CONFIRMACIÓN Y QR (Dos columnas) ═══ -->
-        <div v-else-if="(step === 2 || step === 3 || (step === 4 && estadoPago !== 'PAGADO')) && cliente" class="row g-4 justify-content-center">
+        <div v-else-if="(step === 2 || step === 3 || (step === 4 && estadoPago !== 'PAGADO_PRUEBA')) && cliente" class="row g-4 justify-content-center">
           
           <!-- Columna Izquierda: Stepper + Content -->
           <div class="col-lg-8">
@@ -721,17 +724,13 @@ const formatMonto = (m) => new Intl.NumberFormat('es-BO').format(m)
                 <hr class="my-4 opacity-10">
 
                 <div class="d-flex justify-content-between align-items-end mb-2">
-                  <span class="text-muted small fw-bold text-uppercase">Total a pagar</span>
+                  <span class="text-muted small fw-bold text-uppercase">Total de prueba</span>
                   <span class="fw-black pp-accent-color fs-3" :class="{ 'opacity-25': !haySeleccion }">
-                    {{ monedaDetectada }} {{ formatMonto(totalSeleccionado) }}
+                    Bs {{ formatMonto(totalSeleccionado) }}
                   </span>
                 </div>
 
-                <!-- Nota de conversión USD → Bs -->
-                <div v-if="hayMontosUSD" class="alert alert-info border-0 p-2 mb-4" style="font-size: .75rem;">
-                  <i class="bi bi-info-circle-fill me-1"></i>
-                  El QR se emitirá en <strong>Bs</strong> al tipo de cambio oficial.
-                </div>
+
 
                 <button
                   v-if="step === 2"
@@ -764,15 +763,15 @@ const formatMonto = (m) => new Intl.NumberFormat('es-BO').format(m)
         </div>
 
         <!-- ═══ PASO FINAL: ÉXITO (Diseño centrado) ═══ -->
-        <div v-else-if="step === 4 && estadoPago === 'PAGADO'" class="pp-card shadow-lg mx-auto text-center paso-fade" style="max-width: 600px;">
+        <div v-else-if="step === 4 && estadoPago === 'PAGADO_PRUEBA'" class="pp-card shadow-lg mx-auto text-center paso-fade" style="max-width: 600px;">
           <div class="py-4">
             <div class="pp-success-circle mx-auto mb-4">
               <i class="bi bi-check-lg"></i>
             </div>
-            <h4 class="fw-bold text-success mb-2">¡Pago completado!</h4>
+            <h4 class="fw-bold text-success mb-2">¡Prueba de pago confirmada!</h4>
             <p class="text-muted mb-4">
-              Tu pago fue procesado y confirmado correctamente.<br>
-              Recibirás un comprobante a tu correo.
+              Se confirmó el importe de prueba de Bs 0,20 por concepto.<br>
+              La deuda real permanece pendiente; esta prueba no la liquida.
             </p>
             <div class="alert alert-success d-inline-block py-2 px-4">
               <i class="bi bi-receipt me-1"></i>
@@ -791,8 +790,8 @@ const formatMonto = (m) => new Intl.NumberFormat('es-BO').format(m)
     <div v-if="(step === 2 || step === 3) && haySeleccion" class="pp-mobile-bottom-bar d-lg-none">
        <div class="d-flex align-items-center justify-content-between gap-3">
           <div class="flex-grow-1">
-             <div class="text-muted small text-uppercase fw-bold letter-spacing-1" style="font-size: .65rem;">Total a pagar</div>
-             <div class="fw-black pp-accent-color fs-4">{{ monedaDetectada }} {{ formatMonto(totalSeleccionado) }}</div>
+             <div class="text-muted small text-uppercase fw-bold letter-spacing-1" style="font-size: .65rem;">Total de prueba</div>
+             <div class="fw-black pp-accent-color fs-4">Bs {{ formatMonto(totalSeleccionado) }}</div>
           </div>
           <button
             v-if="step === 2"

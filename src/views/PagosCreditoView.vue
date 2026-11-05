@@ -69,6 +69,7 @@ const cargarPlanes = async (page = 1) => {
     totalPages.value = res.data.last_page || 1
     totalItems.value = res.data.total || 0
   } catch (error) {
+    if (error?.operationPending) { Swal.fire('Operación en proceso', error.message, 'info'); return }
     console.error('Error al cargar planes:', error)
     Swal.fire('Error', 'No se pudieron cargar los planes de pago', 'error')
   } finally {
@@ -96,6 +97,7 @@ const seleccionarPlan = async (plan) => {
     saldoCapitalActual.value = res.data.resumen?.saldo_capital ?? 0
     tasaMoraPlan.value = parseFloat(res.data.plan_pago?.tasa_mora ?? 0)
   } catch (error) {
+    if (error?.operationPending) { Swal.fire('Operación en proceso', error.message, 'info'); return }
     console.error('Error al cargar cuotas:', error)
     Swal.fire('Error', 'No se pudieron cargar las cuotas del plan', 'error')
     planSeleccionado.value = null
@@ -152,7 +154,7 @@ const cuotasSeleccionadas = computed(() => {
 })
 
 const totalAPagar = computed(() => {
-  return cuotasSeleccionadas.value.reduce((sum, c) => sum + parseFloat(c.monto_cuota), 0)
+  return cuotasSeleccionadas.value.reduce((sum, c) => sum + parseFloat(c.monto_pendiente ?? c.monto_cuota), 0)
 })
 
 const numSeleccionados = computed(() => seleccionSet.value.size)
@@ -219,6 +221,7 @@ const onMetodoChange = async () => {
     const res = await api.get(`/mapeo-metodos-cuentas/obtener-cuenta/${formPago.value.metodo_pago_id}`)
     formPago.value.cuenta_id = res.data?.id || ''
   } catch (error) {
+    if (error?.operationPending) { Swal.fire('Operación en proceso', error.message, 'info'); return }
     formPago.value.cuenta_id = ''
   }
 }
@@ -242,7 +245,7 @@ const confirmarPago = async () => {
       observaciones: formPago.value.observaciones,
       cuotas: cuotasSeleccionadas.value.map(c => ({
         id: c.id,
-        monto: c.monto_cuota,
+        monto: c.monto_pendiente ?? c.monto_cuota,
         mora_monto: moraByIdCuota[c.id] ?? 0
       }))
     }
@@ -261,6 +264,7 @@ const confirmarPago = async () => {
     seleccionarPlan(planSeleccionado.value)
     cargarPlanes(currentPage.value)
   } catch (error) {
+    if (error?.operationPending) { Swal.fire('Operación en proceso', error.message, 'info'); return }
     Swal.fire('Error', 'No se pudo procesar el pago', 'error')
   } finally {
     procesando.value = false
@@ -296,6 +300,7 @@ const ejecutarReprogramacion = async () => {
     await seleccionarPlan(planSeleccionado.value)
     Swal.fire({ icon: 'success', title: 'Reprogramación aplicada', timer: 2000, showConfirmButton: false })
   } catch (err) {
+    if (err?.operationPending) { Swal.fire('Operación en proceso', err.message, 'info'); return }
     Swal.fire('Error', err.response?.data?.message || 'No se pudo reprogramar.', 'error')
   } finally {
     procesandoReprog.value = false
@@ -355,6 +360,7 @@ const ejecutarAmortizacion = async () => {
       confirmButtonText: 'Aceptar'
     })
   } catch (err) {
+    if (err?.operationPending) { Swal.fire('Operación en proceso', err.message, 'info'); return }
     Swal.fire('Error', err.response?.data?.message || 'No se pudo registrar la amortización.', 'error')
   } finally {
     procesandoAmort.value = false

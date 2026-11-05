@@ -41,7 +41,7 @@ const iniciarTemporizador = (segundos) => {
 onMounted(() => {
   const notice = sessionStorage.getItem('auth_logout_notice')
   if (notice) { errorMensaje.value = notice; sessionStorage.removeItem('auth_logout_notice') }
-  companyStore.fetchLandingData()
+  companyStore.fetchCompany()
 })
 
 // Limpiar el temporizador si el usuario cambia de página de repente

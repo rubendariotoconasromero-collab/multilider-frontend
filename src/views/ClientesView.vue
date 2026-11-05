@@ -35,6 +35,7 @@ const cargarDatosBase = async (page = 1) => {
     currentPage.value = res.data.current_page
     totalPages.value = res.data.last_page
   } catch (error) {
+    if (error?.operationPending) { Swal.fire('Operación en proceso', error.message, 'info'); return }
     console.error("Error al cargar clientes:", error)
   } finally {
     cargando.value = false
@@ -103,6 +104,7 @@ const guardarCliente = async () => {
     })
 
   } catch (error) {
+    if (error?.operationPending) { Swal.fire('Operación en proceso', error.message, 'info'); return }
     if (error.response?.status === 422) {
       erroresValidacion.value = error.response.data.errors;
       let mensajeHtml = "<ul style='text-align: left; font-size: 0.9rem;'>";
@@ -139,7 +141,8 @@ const toggleEstadoCliente = async (cliente) => {
         await api.delete(`/clientes/${cliente.id}`)
         await cargarDatosBase(currentPage.value)
         Swal.fire({ title: `¡${isActivo ? 'Suspendido' : 'Activado'}!`, icon: 'success', showConfirmButton: false, timer: 1500 })
-      } catch (error) { 
+      } catch (error) {
+    if (error?.operationPending) { Swal.fire('Operación en proceso', error.message, 'info'); return }
         Swal.fire({ icon: 'error', title: 'Error', text: `No se pudo procesar.` })
       }
     }

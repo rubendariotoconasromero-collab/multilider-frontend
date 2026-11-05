@@ -1,10 +1,21 @@
 <script setup>
-import { ref, onMounted, computed } from 'vue'
+import { ref, onMounted, onUnmounted, computed } from 'vue'
 import api from '../api/axios'
 import Swal from 'sweetalert2'
 
 // --- VARIABLES GENERALES ---
 const asesores = ref([])
+const privatePhotos = new Set()
+onUnmounted(() => { for (const url of privatePhotos) URL.revokeObjectURL(url) })
+async function hydratePhoto(adviser) {
+  if (!adviser.foto?.startsWith('/api/asesores/')) return adviser
+  try {
+    const response = await api.get(adviser.foto.replace('/api', ''), { responseType: 'blob' })
+    const url = URL.createObjectURL(response.data)
+    privatePhotos.add(url)
+    return { ...adviser, foto: url }
+  } catch { return { ...adviser, foto: null } }
+}
 const cargando = ref(true)
 const guardando = ref(false)
 
@@ -65,10 +76,13 @@ const cargarDatosBase = async (page = 1) => {
   try {
     cargando.value = true
     const res = await api.get(`/asesores?page=${page}&search=${searchQuery.value}`)
-    asesores.value = res.data.data
+    for (const url of privatePhotos) URL.revokeObjectURL(url)
+    privatePhotos.clear()
+    asesores.value = await Promise.all(res.data.data.map(hydratePhoto))
     currentPage.value = res.data.current_page
     totalPages.value = res.data.last_page
   } catch (error) {
+    if (error?.operationPending) { Swal.fire('Operación en proceso', error.message, 'info'); return }
     console.error("Error al cargar asesores:", error)
   } finally {
     cargando.value = false
@@ -167,6 +181,7 @@ const guardarAsesor = async () => {
     })
 
   } catch (error) {
+    if (error?.operationPending) { Swal.fire('Operación en proceso', error.message, 'info'); return }
     if (error.response?.status === 422) {
       erroresValidacion.value = error.response.data.errors;
       let mensajeHtml = "<ul style='text-align: left; font-size: 0.9rem;'>";
@@ -203,7 +218,8 @@ const toggleEstadoAsesor = async (asesor) => {
         await api.delete(`/asesores/${asesor.id}`)
         await cargarDatosBase(currentPage.value)
         Swal.fire({ title: `¡Éxito!`, icon: 'success', showConfirmButton: false, timer: 1500 })
-      } catch (error) { 
+      } catch (error) {
+    if (error?.operationPending) { Swal.fire('Operación en proceso', error.message, 'info'); return }
         Swal.fire({ icon: 'error', title: 'Error', text: `No se pudo procesar.` })
       }
     }
@@ -261,7 +277,7 @@ onMounted(() => cargarDatosBase())
                 <tr v-for="asesor in asesores" :key="asesor.id">
                   <td class="ps-4">
                     <div class="d-flex align-items-center">
-                      <img v-if="asesor.foto" :src="getFullUrl(asesor.foto)" class="rounded-circle me-3 object-fit-cover shadow-sm" width="40" height="40" alt="Avatar">
+                      <img v-if="asesor.foto" :src="asesor.foto?.startsWith('blob:') ? asesor.foto : getFullUrl(asesor.foto)" class="rounded-circle me-3 object-fit-cover shadow-sm" width="40" height="40" alt="Avatar">
                       <img v-else :src="`https://ui-avatars.com/api/?name=${asesor.nombre_completo}&background=0B2545&color=fff`" class="rounded-circle me-3 shadow-sm" width="40" height="40" alt="Avatar">
                       <div>
                         <div class="fw-bold" style="color: var(--text-main);">{{ asesor.nombre_completo }}</div>
@@ -422,7 +438,7 @@ onMounted(() => cargarDatosBase())
           </div>
           <div class="modal-body p-4" v-if="asesorSeleccionado">
             <div class="text-center mb-4">
-              <img v-if="asesorSeleccionado.foto" :src="getFullUrl(asesorSeleccionado.foto)" class="rounded-circle mb-3 shadow-sm object-fit-cover" width="100" height="100" alt="Foto">
+              <img v-if="asesorSeleccionado.foto" :src="asesorSeleccionado.foto?.startsWith('blob:') ? asesorSeleccionado.foto : getFullUrl(asesorSeleccionado.foto)" class="rounded-circle mb-3 shadow-sm object-fit-cover" width="100" height="100" alt="Foto">
               <img v-else :src="`https://ui-avatars.com/api/?name=${asesorSeleccionado.nombre_completo}&background=0B2545&color=fff&size=100`" class="rounded-circle mb-3 shadow-sm" alt="Avatar">
               <h5 class="fw-bold mb-1">{{ asesorSeleccionado.nombre_completo }}</h5>
               <div class="text-muted small mb-2">Asesor de Ventas</div>

@@ -71,7 +71,7 @@ const resetFilters = () => {
 
 onMounted(async () => {
   companyStore.loading = true // Forzar carga desde el inicio para evitar "No hay resultados"
-  if (!companyStore.company) await companyStore.fetchLandingData()
+  if (!companyStore.company) await companyStore.fetchCompany()
   await companyStore.fetchCities()
 })
 

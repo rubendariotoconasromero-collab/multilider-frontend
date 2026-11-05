@@ -5,6 +5,7 @@ export const useCompanyStore = defineStore('company', {
   state: () => ({
     company: null,
     libelulaEnabled: 1,
+    testPaymentsAvailable: true,
     featuredProperties: [],
     latestProperties: [],
     allProperties: [],
@@ -30,6 +31,17 @@ export const useCompanyStore = defineStore('company', {
   },
 
   actions: {
+    async fetchCompany() {
+      try {
+        const { data } = await api.get('/empresa/datos')
+        this.company = data.empresa
+        this.libelulaEnabled = data.libelula_enabled ?? 1
+        this.testPaymentsAvailable = data.pagos_prueba_disponibles ?? true
+        this.applyBranding()
+      } catch {
+        this.error = 'No se pudo cargar la configuración de empresa.'
+      }
+    },
     async fetchLandingData() {
       this.loading = true
       try {

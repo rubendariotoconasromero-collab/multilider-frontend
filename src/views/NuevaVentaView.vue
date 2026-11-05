@@ -79,18 +79,12 @@ const propiedadesParaSelector = computed(() =>
 // ==========================================
 onMounted(async () => {
   try {
-    const [resCli, resProp, resAse, resMet, resCuentas] = await Promise.all([
-      api.get('/clientes?per_page=50'),
-      api.get('/propiedades?per_page=100'),
-      api.get('/asesores?per_page=100'),
-      api.get('/metodos-pago?per_page=100'),
-      api.get('/cuentas-bancarias?per_page=100')
-    ])
-    clientes.value = resCli.data.data.filter(c => c.estado == 1)
-    propiedades.value = resProp.data.data.filter(p => p.estado === 'Disponible' && p.activo)
-    asesores.value = resAse.data.data
-    metodosPago.value = (resMet.data.data ?? resMet.data).filter(m => m.nombre_metodo !== 'Pasarela de Pago')
-    cuentasBancarias.value = resCuentas.data.data ?? resCuentas.data
+    const options = (await api.get('/comercial/opciones')).data
+    clientes.value = options.clientes
+    propiedades.value = options.propiedades
+    asesores.value = options.asesores
+    metodosPago.value = options.metodos_pago.filter(m => m.nombre_metodo !== 'Pasarela de Pago')
+    cuentasBancarias.value = options.cuentas_bancarias
 
     if (isAsesor.value) {
       const propio = asesores.value.find(a => a.user_id === authStore.user?.id)
@@ -114,8 +108,8 @@ const buscarClientesRemoto = (query) => {
   if (!query || query.length < 2) return
   searchClienteTimeout = setTimeout(async () => {
     try {
-      const res = await api.get(`/clientes?search=${query}&per_page=30`)
-      clientes.value = res.data.data.filter(c => c.estado == 1)
+      const res = await api.get(`/comercial/opciones?search=${encodeURIComponent(query)}`)
+      clientes.value = res.data.clientes
     } catch { /* silent */ }
   }, 300)
 }
@@ -125,8 +119,8 @@ const buscarPropiedadesRemoto = (query) => {
   if (!query || query.length < 2) return
   searchPropiedadTimeout = setTimeout(async () => {
     try {
-      const res = await api.get(`/propiedades?search=${query}&per_page=30`)
-      propiedades.value = res.data.data.filter(p => p.estado === 'Disponible' && p.activo)
+      const res = await api.get(`/comercial/opciones?search=${encodeURIComponent(query)}`)
+      propiedades.value = res.data.propiedades
     } catch { /* silent */ }
   }, 300)
 }
@@ -136,8 +130,8 @@ const buscarAsesoresRemoto = (query) => {
   if (!query || query.length < 2) return
   searchAsesorTimeout = setTimeout(async () => {
     try {
-      const res = await api.get(`/asesores?search=${query}&per_page=30`)
-      asesores.value = res.data.data
+      const res = await api.get(`/comercial/opciones?search=${encodeURIComponent(query)}`)
+      asesores.value = res.data.asesores
     } catch { /* silent */ }
   }, 300)
 }
@@ -170,24 +164,25 @@ const planPagosPreview = computed(() => {
   let cuotaFija = i > 0 ? P * (i * Math.pow(1 + i, meses)) / (Math.pow(1 + i, meses) - 1) : P / meses
 
   let saldo = P
+  let booked = Math.round(P * 100)
   let cuotas = []
 
   for (let mes = 1; mes <= meses; mes++) {
     let interes = saldo * i
     let capital = cuotaFija - interes
 
-    if (mes === meses) {
-      capital = saldo
-      cuotaFija = capital + interes
-    }
+    if (mes === meses) capital = saldo
     saldo -= capital
+    const bookedCapital = mes === meses ? booked : Math.min(booked, Math.max(0, Math.round(capital * 100 + 1e-8)))
+    const bookedInterest = Math.max(0, Math.round(interes * 100 + 1e-8))
+    booked -= bookedCapital
 
     cuotas.push({
       nro: mes,
-      cuota: cuotaFija.toFixed(2),
-      interes: interes.toFixed(2),
-      capital: capital.toFixed(2),
-      saldo: Math.abs(saldo).toFixed(2)
+      cuota: ((bookedCapital + bookedInterest) / 100).toFixed(2),
+      interes: (bookedInterest / 100).toFixed(2),
+      capital: (bookedCapital / 100).toFixed(2),
+      saldo: (booked / 100).toFixed(2)
     })
   }
   return cuotas
@@ -227,6 +222,7 @@ const registrarVenta = async () => {
     asesor_id: formVenta.value.asesor_id,
     cliente_id: clienteSeleccionadoId.value,
     propiedad_id: propiedadSeleccionadaId.value,
+    expected_version: propiedadObj.value?.version || undefined,
     fecha: formVenta.value.fecha,
     moneda: monedaPropiedad.value,
     monto_total: montoTotal.value,
@@ -252,6 +248,10 @@ const registrarVenta = async () => {
       resetAsistente()
     })
   } catch (error) {
+    if (error.operationPending) {
+      Swal.fire('Operación en proceso', error.message, 'info')
+      return
+    }
     let msg = error.response?.data?.message || 'Revisa los datos e intenta nuevamente.'
     Swal.fire('Error al procesar la venta', msg, 'error')
   } finally {

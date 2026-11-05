@@ -2,6 +2,7 @@
 import { ref, onMounted, onUnmounted, computed } from 'vue'
 import { RouterView, RouterLink, useRoute } from 'vue-router'
 import Sidebar from './components/Sidebar.vue'
+import PendingOperations from './components/PendingOperations.vue'
 import { useAuthStore } from './stores/auth'
 
 const isCompact = ref(false)
@@ -67,6 +68,7 @@ onUnmounted(() => clearInterval(themeTimer))
 </script>
 
 <template>
+  <PendingOperations v-if="authStore.user" />
   <div v-if="authStore.sessionUnavailable" class="alert alert-warning mb-0" role="status">
     No se pudo comprobar tu sesión. El servicio de acceso está temporalmente indisponible.
     <button class="btn btn-sm btn-outline-secondary ms-2" @click="authStore.restoreSession(true)">Reintentar</button>

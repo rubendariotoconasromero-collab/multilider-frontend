@@ -58,7 +58,7 @@ const previews = reactive({
 const baseUrl = import.meta.env.VITE_API_URL
 
 onMounted(async () => {
-  await companyStore.fetchLandingData()
+  await companyStore.fetchCompany()
   if (companyStore.company) {
     const c = companyStore.company
     // Cargar datos al form
