@@ -114,12 +114,12 @@ const onSearchPag = () => {
 const abrirModalPago = (pago) => {
   pagoProcesando.value = { ...pago }
   formPago.value = {
-    metodo_pago_id: pago.metodo_pago_id || '',
+    metodo_pago_id: pago.metodo_pago_id || metodoEfectivo()?.id || '',
     cuenta_id:      '',
     fecha_pago:     new Date().toISOString().slice(0, 10),
     observaciones:  pago.observaciones || ''
   }
-  if (pago.metodo_pago_id) onMetodoChange()
+  if (formPago.value.metodo_pago_id) onMetodoChange()
   mostrarModalPago.value = true
 }
 
@@ -129,7 +129,10 @@ const onMetodoChange = async () => {
   if (!formPago.value.metodo_pago_id) { formPago.value.cuenta_id = ''; return }
   try {
     const res = await api.get(`/mapeo-metodos-cuentas/obtener-cuenta/${formPago.value.metodo_pago_id}`)
-    formPago.value.cuenta_id = res.data?.id || ''
+    const sale = pagoProcesando.value?.nota_venta
+    const currency = sale?.moneda || sale?.propiedad?.moneda
+    const account = res.data
+    formPago.value.cuenta_id = account?.id && (!account.moneda || !currency || account.moneda === currency) ? account.id : ''
   } catch {
     formPago.value.cuenta_id = ''
   }
@@ -201,8 +204,10 @@ const descargarComprobante = async (pago) => {
 // ==========================================
 // HELPERS
 // ==========================================
-const esEfectivo = (pago) =>
-  pago.metodo_pago?.nombre_metodo?.toLowerCase().includes('efectivo')
+const metodoEfectivo = () => metodosPago.value.find(method =>
+  method.estado !== 'Inactivo' && method.nombre_metodo?.toLowerCase().includes('efectivo'))
+const esEfectivo = (pago) => !pago.id_transaccion_libelula &&
+  (pago.metodo_pago_id ? pago.metodo_pago?.nombre_metodo?.toLowerCase().includes('efectivo') : !!metodoEfectivo())
 
 const formatoMoneda = (v) =>
   parseFloat(v || 0).toLocaleString('es-BO', { minimumFractionDigits: 2 })
@@ -548,7 +553,7 @@ const conceptoLabel = (c) => ({
                   <input
                     type="text"
                     class="form-control border-0 bg-light fw-semibold text-primary"
-                    :value="cuentasBancarias.find(c => c.id === formPago.cuenta_id)?.nombre ?? 'Cargando...'"
+                    :value="cuentasBancarias.find(c => c.id === formPago.cuenta_id)?.nombre ?? 'Sin cuenta compatible'"
                     disabled
                   >
                 </div>

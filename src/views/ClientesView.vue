@@ -106,13 +106,11 @@ const guardarCliente = async () => {
   } catch (error) {
     if (error?.operationPending) { Swal.fire('Operación en proceso', error.message, 'info'); return }
     if (error.response?.status === 422) {
-      erroresValidacion.value = error.response.data.errors;
-      let mensajeHtml = "<ul style='text-align: left; font-size: 0.9rem;'>";
-      for (const campo in erroresValidacion.value) {
-        mensajeHtml += `<li>${erroresValidacion.value[campo].join('</li><li>')}</li>`;
-      }
-      mensajeHtml += "</ul>";
-      Swal.fire({ icon: 'warning', title: 'Verifica los datos', html: mensajeHtml, confirmButtonColor: '#0B2545' });
+      erroresValidacion.value = error.response.data.errors || {};
+      const mensajes = Object.values(erroresValidacion.value).flat().join(' ');
+      Swal.fire({ icon: 'warning', title: 'Verifica los datos',
+        text: mensajes || error.response.data.message || 'Revisa el formulario.',
+        confirmButtonColor: '#0B2545' });
     } else {
       Swal.fire({ icon: 'error', title: 'Oops...', text: error.response?.data?.message || 'Error al guardar.', confirmButtonColor: '#0B2545' });
     }
