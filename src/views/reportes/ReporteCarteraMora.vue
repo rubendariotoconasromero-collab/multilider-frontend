@@ -19,6 +19,11 @@ const pagina     = ref(1)
 const perPage    = ref(15)
 
 const cargando          = ref(false)
+const errorCarga = ref('')
+let consulta
+const moneda = ref('BOB')
+const permiteMoneda = ref(false)
+const simbolo = computed(() => moneda.value === 'USD' ? 'USD' : 'Bs.')
 const exportandoPdf     = ref(false)
 const exportandoXls     = ref(false)
 const mostrarModalEnvio = ref(false)
@@ -31,7 +36,7 @@ const asesores = ref([])
 // ─── Helpers ─────────────────────────────────────────────────────────────────
 const fmt = (v) => {
   const n = parseFloat(v) || 0
-  return 'Bs. ' + n.toLocaleString('es-BO', { minimumFractionDigits: 2, maximumFractionDigits: 2 })
+  return `${simbolo.value} ` + n.toLocaleString('es-BO', { minimumFractionDigits: 2, maximumFractionDigits: 2 })
 }
 
 const fmtFecha = (v) => {
@@ -62,6 +67,10 @@ const tramoColor = (tramo) => {
 
 // ─── Carga ────────────────────────────────────────────────────────────────────
 async function cargar(resetPagina = true) {
+  consulta?.abort()
+  const actual = new AbortController()
+  consulta = actual
+  errorCarga.value = ''
   if (resetPagina) pagina.value = 1
   cargando.value = true
   try {
@@ -70,15 +79,19 @@ async function cargar(resetPagina = true) {
     if (desde.value)   params.desde      = desde.value
     if (hasta.value)   params.hasta      = hasta.value
 
-    const { data } = await api.get('/reportes/cartera-mora', { params })
+    params.moneda = moneda.value
+    const { data } = await api.get('/reportes/cartera-mora', { params, signal: actual.signal })
+    permiteMoneda.value = Boolean(data.moneda)
     kpis.value     = data.kpis
     aging.value    = data.aging
     cuotas.value   = data.cuotas
     asesores.value = data.asesores ?? []
   } catch (e) {
-    console.error(e)
+    if (actual.signal.aborted) return
+    kpis.value = null
+    errorCarga.value = e?.response?.data?.message ?? 'No se pudo cargar el reporte.'
   } finally {
-    cargando.value = false
+    if (consulta === actual) cargando.value = false
   }
 }
 
@@ -88,14 +101,14 @@ async function cambiarPagina(p) {
 }
 
 onMounted(() => cargar())
-watch([asesorId, desde, hasta], () => cargar())
+watch([asesorId, desde, hasta, moneda], () => cargar())
 
 // ─── Exportar ────────────────────────────────────────────────────────────────
 async function exportar(tipo) {
   const flag = tipo === 'pdf' ? exportandoPdf : exportandoXls
   flag.value = true
   try {
-    const params = {}
+    const params = { moneda: moneda.value }
     if (asesorId.value) params.asesor_id = asesorId.value
     if (desde.value)   params.desde      = desde.value
     if (hasta.value)   params.hasta      = hasta.value
@@ -129,7 +142,7 @@ const chartData = computed(() => {
     labels: aging.value.map(t => t.label),
     datasets: [
       {
-        label: 'Monto Vencido (Bs.)',
+        label: `Monto Vencido (${simbolo.value})`,
         data: aging.value.map(t => t.monto),
         backgroundColor: aging.value.map(t => tramoColor(t.label)),
         borderRadius: 5,
@@ -145,7 +158,7 @@ const chartOptions = {
     legend: { display: false },
     tooltip: {
       callbacks: {
-        label: ctx => ' Bs. ' + ctx.parsed.y.toLocaleString('es-BO', { minimumFractionDigits: 2 }),
+        label: ctx => ` ${simbolo.value} ` + ctx.parsed.y.toLocaleString('es-BO', { minimumFractionDigits: 2 }),
         afterLabel: (ctx) => {
           const t = aging.value[ctx.dataIndex]
           return t ? '  ' + t.count + ' cuotas  |  ' + t.clientes + ' clientes' : ''
@@ -156,7 +169,7 @@ const chartOptions = {
   scales: {
     y: {
       beginAtZero: true,
-      ticks: { callback: v => 'Bs. ' + Number(v).toLocaleString('es-BO') },
+      ticks: { callback: v => `${simbolo.value} ` + Number(v).toLocaleString('es-BO') },
     },
   },
 }
@@ -221,6 +234,13 @@ const pctMora = computed(() => {
         <label class="form-label small fw-semibold mb-1">Vencimiento hasta</label>
         <input type="date" class="form-control form-control-sm" v-model="hasta" />
       </div>
+      <div v-if="permiteMoneda">
+        <label class="form-label small mb-1" for="moneda-reporte">Moneda</label>
+        <select id="moneda-reporte" v-model="moneda" class="form-select form-select-sm">
+          <option value="BOB">BOB</option>
+          <option value="USD">USD</option>
+        </select>
+      </div>
       <button class="btn btn-sm btn-primary" @click="cargar()" :disabled="cargando">
         <i class="bi bi-arrow-clockwise me-1"></i> Actualizar
       </button>
@@ -230,6 +250,7 @@ const pctMora = computed(() => {
     </div>
 
     <!-- ── Spinner ───────────────────────────────────────────────────────── -->
+    <div v-if="errorCarga" class="alert alert-danger" role="alert">{{ errorCarga }}</div>
     <div v-if="cargando" class="text-center py-5">
       <div class="spinner-border text-danger" role="status"></div>
       <p class="text-muted mt-2 small">Cargando datos...</p>
@@ -293,7 +314,7 @@ const pctMora = computed(() => {
                   <th>Tramo</th>
                   <th class="text-center">Cuotas</th>
                   <th class="text-center">Clientes</th>
-                  <th class="text-end">Monto (Bs.)</th>
+                  <th class="text-end">Monto ({{ simbolo }})</th>
                   <th class="text-center">% Total</th>
                 </tr>
               </thead>
@@ -449,7 +470,7 @@ const pctMora = computed(() => {
     v-model="mostrarModalEnvio"
     reporte="cartera-mora"
     titulo="Cartera y Mora"
-    :params="{ asesor_id: asesorId, desde: desde, hasta: hasta }"
+    :params="{ moneda, asesor_id: asesorId, desde: desde, hasta: hasta }"
   />
 </template>
 

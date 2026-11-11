@@ -28,6 +28,11 @@ const hasta        = ref(hoy)
 const cargando     = ref(false)
 const adminData    = ref(null)
 const asesorData   = ref(null)
+const moneda = ref('BOB')
+const permiteMoneda = ref(false)
+const simbolo = computed(() => (adminData.value ?? asesorData.value)?.moneda === 'USD' ? 'USD' : 'Bs')
+const errorCarga = ref('')
+let consulta
 
 const fmt    = (n) => new Intl.NumberFormat('es-BO', { minimumFractionDigits: 2, maximumFractionDigits: 2 }).format(n ?? 0)
 const fmtInt = (n) => new Intl.NumberFormat('es-BO').format(n ?? 0)
@@ -51,25 +56,30 @@ const chartColors = computed(() => ({
 }))
 
 const cargar = async () => {
+  consulta?.abort()
+  const actual = new AbortController()
+  consulta = actual
+  errorCarga.value = ''
   cargando.value = true
   try {
-    const params = { desde: desde.value, hasta: hasta.value }
-    if (isAdmin.value) {
-      const res = await api.get('/dashboard/admin', { params })
-      adminData.value = res.data
-    } else {
-      const res = await api.get('/dashboard/asesor', { params })
-      asesorData.value = res.data
-    }
+    const admin = isAdmin.value
+    const params = { desde: desde.value, hasta: hasta.value, moneda: moneda.value }
+    const { data } = await api.get(admin ? '/dashboard/admin' : '/dashboard/asesor', { params, signal: actual.signal })
+    permiteMoneda.value = Boolean(data.moneda)
+    adminData.value = admin ? data : null
+    asesorData.value = admin ? null : data
   } catch (e) {
-    console.error('Error cargando dashboard:', e)
+    if (actual.signal.aborted) return
+    adminData.value = null
+    asesorData.value = null
+    errorCarga.value = e?.response?.data?.message ?? 'No se pudieron cargar los datos del dashboard.'
   } finally {
-    cargando.value = false
+    if (consulta === actual) cargando.value = false
   }
 }
 
 onMounted(cargar)
-watch([desde, hasta], cargar)
+watch([desde, hasta, moneda], cargar)
 
 // ── Charts Admin ──────────────────────────────────────────────────────────────
 const chartVentasPorMes = computed(() => {
@@ -77,7 +87,7 @@ const chartVentasPorMes = computed(() => {
   return {
     labels: d.map(r => labelMes(r.anio, r.mes)),
     datasets: [
-      { label: 'Monto (Bs)', data: d.map(r => +r.monto), backgroundColor: '#0d6efd', borderRadius: 6 },
+      { label: `Monto (${simbolo.value})`, data: d.map(r => +r.monto), backgroundColor: '#0d6efd', borderRadius: 6 },
       { label: 'Cantidad', data: d.map(r => +r.cantidad), backgroundColor: '#6ea8fe', borderRadius: 6, yAxisID: 'y1' },
     ],
   }
@@ -90,7 +100,7 @@ const optsVentasPorMes = computed(() => ({
   scales: {
     y:  { 
       beginAtZero: true, 
-      title: { display: true, text: 'Bs', color: chartColors.value.text },
+      title: { display: true, text: simbolo.value, color: chartColors.value.text },
       ticks: { color: chartColors.value.text },
       grid: { color: chartColors.value.grid }
     },
@@ -116,7 +126,7 @@ const chartCobros = computed(() => {
   cobros.forEach(c => { map[labelMes(c.anio, c.mes)] = +c.monto })
   return {
     labels,
-    datasets: [{ label: 'Cobros (Bs)', data: labels.map(l => map[l] ?? 0), backgroundColor: '#198754', borderRadius: 6 }],
+    datasets: [{ label: `Cobros (${simbolo.value})`, data: labels.map(l => map[l] ?? 0), backgroundColor: '#198754', borderRadius: 6 }],
   }
 })
 
@@ -133,7 +143,7 @@ const chartTopAsesores = computed(() => {
   return {
     labels: d.map(r => r.asesor?.nombre_completo ?? 'Sin nombre'),
     datasets: [{
-      label: 'Ventas (Bs)',
+      label: `Ventas (${simbolo.value})`,
       data: d.map(r => +r.monto),
       backgroundColor: ['#0d6efd','#6f42c1','#20c997','#fd7e14','#dc3545'],
       borderRadius: 6,
@@ -191,7 +201,7 @@ const chartMisVentas = computed(() => {
   const d = asesorData.value?.graficos?.ventas_por_mes ?? []
   return {
     labels: d.map(r => labelMes(r.anio, r.mes)),
-    datasets: [{ label: 'Monto (Bs)', data: d.map(r => +r.monto), backgroundColor: '#0d6efd', borderRadius: 6 }],
+    datasets: [{ label: `Monto (${simbolo.value})`, data: d.map(r => +r.monto), backgroundColor: '#0d6efd', borderRadius: 6 }],
   }
 })
 
@@ -227,6 +237,10 @@ const chartMiCartera = computed(() => {
           <span class="input-group-text">—</span>
           <input type="date" class="form-control" v-model="hasta" :min="desde" :max="hoy" />
         </div>
+        <select v-if="permiteMoneda" v-model="moneda" class="form-select form-select-sm w-auto" aria-label="Moneda">
+          <option value="BOB">Bolivianos (BOB)</option>
+          <option value="USD">Dólares (USD)</option>
+        </select>
         <button class="btn btn-primary btn-sm px-3" @click="cargar" :disabled="cargando">
           <i class="bi bi-arrow-clockwise" :class="{ 'spin': cargando }"></i>
           {{ cargando ? 'Cargando…' : 'Actualizar' }}
@@ -250,7 +264,7 @@ const chartMiCartera = computed(() => {
             <div class="kpi-icon bg-primary-subtle text-primary"><i class="bi bi-cart-check-fill fs-4"></i></div>
             <div>
               <div class="kpi-lbl">Ventas del período</div>
-              <div class="kpi-val">Bs {{ fmt(adminData.kpis.ventas_monto) }}</div>
+              <div class="kpi-val">{{ simbolo }} {{ fmt(adminData.kpis.ventas_monto) }}</div>
               <div class="kpi-sub">{{ fmtInt(adminData.kpis.ventas_cantidad) }} venta(s)</div>
             </div>
           </div>
@@ -260,7 +274,7 @@ const chartMiCartera = computed(() => {
             <div class="kpi-icon bg-success-subtle text-success"><i class="bi bi-cash-coin fs-4"></i></div>
             <div>
               <div class="kpi-lbl">Cobros del período</div>
-              <div class="kpi-val">Bs {{ fmt(adminData.kpis.cobros_monto) }}</div>
+              <div class="kpi-val">{{ simbolo }} {{ fmt(adminData.kpis.cobros_monto) }}</div>
               <div class="kpi-sub">Ingresos confirmados</div>
             </div>
           </div>
@@ -270,7 +284,7 @@ const chartMiCartera = computed(() => {
             <div class="kpi-icon bg-danger-subtle text-danger"><i class="bi bi-exclamation-circle-fill fs-4"></i></div>
             <div>
               <div class="kpi-lbl">Mora acumulada</div>
-              <div class="kpi-val text-danger">Bs {{ fmt(adminData.kpis.mora_acumulada) }}</div>
+              <div class="kpi-val text-danger">{{ simbolo }} {{ fmt(adminData.kpis.mora_acumulada) }}</div>
               <div class="kpi-sub">Cuotas vencidas totales</div>
             </div>
           </div>
@@ -280,7 +294,7 @@ const chartMiCartera = computed(() => {
             <div class="kpi-icon bg-info-subtle text-info"><i class="bi bi-wallet2 fs-4"></i></div>
             <div>
               <div class="kpi-lbl">Cartera activa</div>
-              <div class="kpi-val">Bs {{ fmt(adminData.kpis.cartera_activa) }}</div>
+              <div class="kpi-val">{{ simbolo }} {{ fmt(adminData.kpis.cartera_activa) }}</div>
               <div class="kpi-sub">{{ fmtInt(adminData.kpis.clientes_credito) }} cliente(s) crédito</div>
             </div>
           </div>
@@ -290,7 +304,7 @@ const chartMiCartera = computed(() => {
             <div class="kpi-icon bg-warning-subtle text-warning"><i class="bi bi-person-badge-fill fs-4"></i></div>
             <div>
               <div class="kpi-lbl">Comisiones pagadas</div>
-              <div class="kpi-val">Bs {{ fmt(adminData.kpis.comisiones_pagadas) }}</div>
+              <div class="kpi-val">{{ simbolo }} {{ fmt(adminData.kpis.comisiones_pagadas) }}</div>
               <div class="kpi-sub">En el período</div>
             </div>
           </div>
@@ -358,7 +372,7 @@ const chartMiCartera = computed(() => {
                         {{ v.tipo_venta === 'CREDITO' ? 'Crédito' : 'Contado' }}
                       </span>
                     </td>
-                    <td class="text-end fw-semibold">Bs {{ fmt(v.monto_total) }}</td>
+                    <td class="text-end fw-semibold">{{ simbolo }} {{ fmt(v.monto_total) }}</td>
                   </tr>
                 </tbody>
               </table>
@@ -383,7 +397,7 @@ const chartMiCartera = computed(() => {
                     <td class="text-center">{{ c.numero_cuota }}</td>
                     <td class="text-nowrap text-danger">{{ fmtFecha(c.fecha_vencimiento) }}</td>
                     <td><span class="badge bg-danger-subtle text-danger">{{ diasAtraso(c.fecha_vencimiento) }}d</span></td>
-                    <td class="text-end fw-semibold">Bs {{ fmt(c.monto_cuota) }}</td>
+                    <td class="text-end fw-semibold">{{ simbolo }} {{ fmt(c.monto_cuota) }}</td>
                   </tr>
                 </tbody>
               </table>
@@ -407,7 +421,7 @@ const chartMiCartera = computed(() => {
                     <td class="text-muted">{{ i + 1 }}</td>
                     <td class="fw-semibold">{{ d.cliente?.nombre_completo ?? '-' }}</td>
                     <td>{{ fmtFecha(d.fecha) }}</td>
-                    <td class="text-end fw-bold text-primary">Bs {{ fmt(d.saldo_credito) }}</td>
+                    <td class="text-end fw-bold text-primary">{{ simbolo }} {{ fmt(d.saldo_credito) }}</td>
                   </tr>
                 </tbody>
               </table>
@@ -428,7 +442,7 @@ const chartMiCartera = computed(() => {
             <div class="kpi-icon bg-primary-subtle text-primary"><i class="bi bi-cart-check-fill fs-4"></i></div>
             <div>
               <div class="kpi-lbl">Mis ventas</div>
-              <div class="kpi-val">Bs {{ fmt(asesorData.kpis.ventas_monto) }}</div>
+              <div class="kpi-val">{{ simbolo }} {{ fmt(asesorData.kpis.ventas_monto) }}</div>
               <div class="kpi-sub">{{ fmtInt(asesorData.kpis.ventas_cantidad) }} venta(s)</div>
             </div>
           </div>
@@ -438,7 +452,7 @@ const chartMiCartera = computed(() => {
             <div class="kpi-icon bg-success-subtle text-success"><i class="bi bi-award-fill fs-4"></i></div>
             <div>
               <div class="kpi-lbl">Comisión estimada</div>
-              <div class="kpi-val text-success">Bs {{ fmt(asesorData.kpis.comision_estimada) }}</div>
+              <div class="kpi-val text-success">{{ simbolo }} {{ fmt(asesorData.kpis.comision_estimada) }}</div>
               <div class="kpi-sub">En el período</div>
             </div>
           </div>
@@ -508,7 +522,7 @@ const chartMiCartera = computed(() => {
                     <td class="text-center">{{ c.numero_cuota }}</td>
                     <td class="text-nowrap text-danger">{{ fmtFecha(c.fecha_vencimiento) }}</td>
                     <td><span class="badge bg-danger-subtle text-danger">{{ diasAtraso(c.fecha_vencimiento) }}d</span></td>
-                    <td class="text-end fw-semibold">Bs {{ fmt(c.monto_cuota) }}</td>
+                    <td class="text-end fw-semibold">{{ simbolo }} {{ fmt(c.monto_cuota) }}</td>
                   </tr>
                 </tbody>
               </table>
@@ -532,7 +546,7 @@ const chartMiCartera = computed(() => {
                     <td>{{ c.plan_pago?.nota_venta?.cliente?.nombre_completo ?? '-' }}</td>
                     <td class="text-center">{{ c.numero_cuota }}</td>
                     <td class="text-nowrap">{{ fmtFecha(c.fecha_vencimiento) }}</td>
-                    <td class="text-end fw-semibold">Bs {{ fmt(c.monto_cuota) }}</td>
+                    <td class="text-end fw-semibold">{{ simbolo }} {{ fmt(c.monto_cuota) }}</td>
                   </tr>
                 </tbody>
               </table>
@@ -544,9 +558,8 @@ const chartMiCartera = computed(() => {
     </template>
 
     <!-- Sin datos -->
-    <div v-if="!cargando && !adminData && !asesorData" class="text-center py-5 text-muted">
-      <i class="bi bi-database-slash fs-1 d-block mb-2"></i>
-      No se pudieron cargar los datos del dashboard.
+    <div v-if="!cargando && errorCarga" class="alert alert-danger" role="alert">
+      {{ errorCarga }}
     </div>
 
   </div>

@@ -25,6 +25,8 @@ const perPage  = ref(15)
 const pagina   = ref(1)
 
 const cargando          = ref(false)
+const errorCarga = ref('')
+let consulta
 const exportandoPdf     = ref(false)
 const exportandoXls     = ref(false)
 const mostrarModalEnvio = ref(false)
@@ -47,6 +49,10 @@ const fmtFecha = (v) => {
 
 // ─── Carga ────────────────────────────────────────────────────────────────────
 async function cargar(resetPagina = true) {
+  consulta?.abort()
+  const actual = new AbortController()
+  consulta = actual
+  errorCarga.value = ''
   if (resetPagina) pagina.value = 1
   cargando.value = true
   try {
@@ -60,15 +66,17 @@ async function cargar(resetPagina = true) {
     }
     if (asesorId.value) params.asesor_id = asesorId.value
 
-    const { data } = await api.get('/reportes/comisiones', { params })
+    const { data } = await api.get('/reportes/comisiones', { params, signal: actual.signal })
     kpis.value     = data.kpis
     grafico.value  = data.grafico  ?? []
     egresos.value  = data.egresos
     asesores.value = data.asesores ?? []
   } catch (e) {
-    console.error(e)
+    if (actual.signal.aborted) return
+    kpis.value = null
+    errorCarga.value = e?.response?.data?.message ?? 'No se pudo cargar el reporte.'
   } finally {
-    cargando.value = false
+    if (consulta === actual) cargando.value = false
   }
 }
 
@@ -257,6 +265,7 @@ const paginas = computed(() => {
     </div>
 
     <!-- ── Spinner ───────────────────────────────────────────────────────── -->
+    <div v-if="errorCarga" class="alert alert-danger" role="alert">{{ errorCarga }}</div>
     <div v-if="cargando" class="text-center py-5">
       <div class="spinner-border text-warning" role="status"></div>
       <p class="text-muted mt-2 small">Cargando datos...</p>

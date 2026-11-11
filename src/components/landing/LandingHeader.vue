@@ -1,4 +1,5 @@
 <script setup>
+import { apiOrigin } from '@/api/config'
 import { ref, onMounted, onUnmounted } from 'vue'
 import { RouterLink } from 'vue-router'
 import { useCompanyStore } from '@/stores/company'
@@ -16,7 +17,7 @@ const isScrolled = ref(false)
 const isMobileMenuOpen = ref(false)
 const isDark = ref(false)
 
-const baseUrl = import.meta.env.VITE_API_URL
+const baseUrl = apiOrigin
 
 const handleScroll = () => {
   isScrolled.value = window.scrollY > 50

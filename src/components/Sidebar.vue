@@ -1,4 +1,5 @@
 <script setup>
+import { apiOrigin } from '@/api/config'
 import { ref } from 'vue'
 import { RouterLink } from 'vue-router'
 import { useAuthStore } from '../stores/auth'
@@ -13,7 +14,7 @@ const emit = defineEmits(['toggle-compact', 'close-mobile'])
 const authStore = useAuthStore()
 const companyStore = useCompanyStore()
 
-const baseUrl = import.meta.env.VITE_API_URL
+const baseUrl = apiOrigin
 
 // Estado para controlar qué menú desplegable está abierto
 const openSubmenu = ref(null)

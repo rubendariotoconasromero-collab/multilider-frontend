@@ -6,6 +6,26 @@ const cargando = ref(true)
 const error    = ref(null)
 const cliente  = ref(null)
 const ventas   = ref([])
+const comprobantePendiente = ref(null)
+const errorComprobante = ref('')
+
+async function descargarComprobante(id) {
+  comprobantePendiente.value = id
+  errorComprobante.value = ''
+  try {
+    const { data } = await api.get(`/mi-cartera/pagos/${id}/comprobante`, { responseType: 'blob' })
+    const url = URL.createObjectURL(data)
+    const link = document.createElement('a')
+    link.href = url
+    link.download = `comprobante-${id}.pdf`
+    link.click()
+    setTimeout(() => URL.revokeObjectURL(url), 1000)
+  } catch {
+    errorComprobante.value = 'No se pudo descargar el comprobante. Vuelve a intentarlo.'
+  } finally {
+    comprobantePendiente.value = null
+  }
+}
 
 onMounted(async () => {
   try {
@@ -250,6 +270,20 @@ const ventasContado  = computed(() => ventas.value.filter(v => v.tipo_venta === 
         </div>
       </template>
 
+      <section v-if="ventas.some(venta => venta.pagos?.length)" class="card border-0 shadow-sm rounded-4 my-4">
+        <div class="card-body p-4">
+          <h5 class="fw-bold mb-3">Comprobantes de pago</h5>
+          <p v-if="errorComprobante" class="alert alert-danger" role="alert">{{ errorComprobante }}</p>
+          <template v-for="venta in ventas" :key="venta.id">
+            <div v-for="pago in venta.pagos" :key="pago.id" class="d-flex flex-wrap justify-content-between align-items-center gap-2 border-bottom py-2">
+              <span>{{ venta.propiedad?.codigo }} · {{ pago.fecha_pago }} · {{ venta.moneda ?? venta.propiedad?.moneda }} {{ fmt(pago.monto) }}</span>
+              <button class="btn btn-sm btn-outline-primary" :disabled="comprobantePendiente !== null" @click="descargarComprobante(pago.id)">
+                {{ comprobantePendiente === pago.id ? 'Descargando…' : 'Descargar PDF' }}
+              </button>
+            </div>
+          </template>
+        </div>
+      </section>
     </div>
   </div>
 </template>

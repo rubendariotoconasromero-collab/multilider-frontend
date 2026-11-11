@@ -1,9 +1,10 @@
 <script setup>
+import { apiOrigin } from '@/api/config'
 import { useCompanyStore } from '@/stores/company'
 import { Facebook, Instagram, Linkedin, Twitter, ArrowUp, Send } from 'lucide-vue-next'
 
 const companyStore = useCompanyStore()
-const baseUrl = import.meta.env.VITE_API_URL
+const baseUrl = apiOrigin
 
 const scrollToTop = () => {
   window.scrollTo({ top: 0, behavior: 'smooth' })

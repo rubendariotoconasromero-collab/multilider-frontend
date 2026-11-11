@@ -44,6 +44,7 @@ export const useCompanyStore = defineStore('company', {
     },
     async fetchLandingData() {
       this.loading = true
+      this.error = null
       try {
         const response = await api.get('/landing')
         const data = response.data
@@ -56,8 +57,10 @@ export const useCompanyStore = defineStore('company', {
         
         this.applyBranding()
       } catch (err) {
-        this.error = 'No se pudo cargar la información de la landing.'
-        console.error(err)
+        this.error = err?.response?.data?.message ?? 'No se pudo cargar la portada.'
+        this.featuredProperties = []
+        this.latestProperties = []
+        this.advisors = []
       } finally {
         this.loading = false
       }

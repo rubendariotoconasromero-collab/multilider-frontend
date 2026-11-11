@@ -1,9 +1,10 @@
 <script setup>
+import { apiOrigin } from '@/api/config'
 import { useCompanyStore } from '@/stores/company'
 import { MessageCircle } from 'lucide-vue-next'
 
 const companyStore = useCompanyStore()
-const baseUrl = import.meta.env.VITE_API_URL
+const baseUrl = apiOrigin
 
 const getWhatsAppLink = (phone) => {
   const cleanPhone = phone.replace(/\D/g, '')
@@ -31,14 +32,17 @@ const getWhatsAppLink = (phone) => {
         >
           <div class="landing-card h-100 shadow-sm transition-all border-0 bg-white">
             <div class="position-relative overflow-hidden group" style="height: 350px;">
-              <img 
-                :src="advisor.foto ? (baseUrl + advisor.foto) : `https://ui-avatars.com/api/?name=${advisor.nombre}&background=1e40af&color=fff&size=512`" 
+              <img v-if="advisor.foto"
+                :src="baseUrl + advisor.foto"
                 class="w-100 h-100 object-fit-cover" 
                 style="transition: transform 0.5s ease;"
                 alt="Foto asesor"
               >
+              <div v-else class="d-flex h-100 align-items-center justify-content-center bg-light text-secondary" aria-hidden="true">
+                <i class="bi bi-person-circle display-1"></i>
+              </div>
               <div class="advisor-overlay position-absolute w-100 h-100 top-0 start-0 d-flex align-items-end p-4 opacity-0 transition-all" style="background: linear-gradient(0deg, rgba(0,0,0,0.8) 0%, transparent 100%);">
-                 <a 
+                 <a v-if="advisor.telefono"
                   :href="getWhatsAppLink(advisor.telefono || '')" 
                   target="_blank"
                   class="btn btn-success w-100 d-flex align-items-center justify-content-center gap-2 py-2 rounded-3 border-0"
@@ -50,7 +54,7 @@ const getWhatsAppLink = (phone) => {
               </div>
             </div>
             <div class="p-4 text-center">
-              <h5 class="fw-bold mb-1">{{ advisor.nombre }}</h5>
+              <h5 class="fw-bold mb-1">{{ advisor.nombre ?? advisor.nombre_completo }}</h5>
               <p class="text-primary-landing small fw-bold text-uppercase mb-2">{{ advisor.cargo || 'Asesor Inmobiliario' }}</p>
               <div class="border-top pt-3 mt-2">
                 <span class="text-muted small fst-italic">Especialista en {{ advisor.especialidad || 'Ventas' }}</span>

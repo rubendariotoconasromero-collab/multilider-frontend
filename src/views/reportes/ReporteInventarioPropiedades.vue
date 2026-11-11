@@ -31,6 +31,8 @@ const estadosDisponibles = ['Todos', 'Disponible', 'Vendido', 'Reservado']
 
 // ─── Estado de carga ────────────────────────────────────────────────────────
 const loading           = ref(false)
+const errorCarga = ref('')
+let consulta
 const loadingExcel      = ref(false)
 const loadingPdf        = ref(false)
 const mostrarModalEnvio = ref(false)
@@ -81,15 +83,24 @@ watch(distritoId, async (val) => {
 
 // ─── Carga de datos ──────────────────────────────────────────────────────────
 async function cargar() {
+  consulta?.abort()
+  const actual = new AbortController()
+  consulta = actual
+  errorCarga.value = ''
   loading.value = true
   try {
-    const { data } = await api.get('/reportes/inventario-propiedades', { params: params.value })
+    const { data } = await api.get('/reportes/inventario-propiedades', { params: params.value, signal: actual.signal })
     kpis.value          = data.kpis
     propiedades.value   = data.propiedades
     graficoEstados.value = data.grafico_estados
     graficoTipos.value   = data.grafico_tipos
+  } catch (error) {
+    if (actual.signal.aborted) return
+    kpis.value = null
+    propiedades.value = { data: [], current_page: 1, last_page: 1, total: 0, per_page: perPage.value }
+    errorCarga.value = error?.response?.data?.message ?? 'No se pudo cargar el inventario.'
   } finally {
-    loading.value = false
+    if (consulta === actual) loading.value = false
   }
 }
 
@@ -403,7 +414,8 @@ onMounted(async () => {
           </select>
         </div>
 
-        <div v-if="loading" class="text-center py-5">
+        <div v-if="errorCarga" class="alert alert-danger" role="alert">{{ errorCarga }}</div>
+        <div v-else-if="loading" class="text-center py-5">
           <div class="spinner-border spinner-border-sm text-primary"></div>
           <span class="ms-2 small text-muted">Cargando…</span>
         </div>

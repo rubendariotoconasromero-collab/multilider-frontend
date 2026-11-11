@@ -24,6 +24,11 @@ const pagina    = ref(1)
 const perPage   = ref(15)
 
 const cargando           = ref(false)
+const errorCarga = ref('')
+let consulta
+const moneda = ref('BOB')
+const permiteMoneda = ref(false)
+const simbolo = computed(() => moneda.value === 'USD' ? 'USD' : 'Bs.')
 const exportandoPdf      = ref(false)
 const exportandoXls      = ref(false)
 const mostrarModalEnvio  = ref(false)
@@ -38,7 +43,7 @@ const MESES = ['Ene','Feb','Mar','Abr','May','Jun','Jul','Ago','Sep','Oct','Nov'
 
 const fmt = (v) => {
   const n = parseFloat(v) || 0
-  return 'Bs. ' + n.toLocaleString('es-BO', { minimumFractionDigits: 2, maximumFractionDigits: 2 })
+  return `${simbolo.value} ` + n.toLocaleString('es-BO', { minimumFractionDigits: 2, maximumFractionDigits: 2 })
 }
 
 const fmtFecha = (v) => {
@@ -51,6 +56,10 @@ const labelMes = (anio, mes) => MESES[Number(mes) - 1] + ' ' + anio
 
 // ─── Carga de datos ───────────────────────────────────────────────────────────
 async function cargar(resetPagina = true) {
+  consulta?.abort()
+  const actual = new AbortController()
+  consulta = actual
+  errorCarga.value = ''
   if (resetPagina) pagina.value = 1
   cargando.value = true
   try {
@@ -64,15 +73,19 @@ async function cargar(resetPagina = true) {
     }
     if (asesorId.value) params.asesor_id = asesorId.value
 
-    const { data } = await api.get('/reportes/ventas-cobros', { params })
+    params.moneda = moneda.value
+    const { data } = await api.get('/reportes/ventas-cobros', { params, signal: actual.signal })
+    permiteMoneda.value = Boolean(data.moneda)
     kpis.value     = data.kpis
     grafico.value  = data.grafico
     notas.value    = data.notas
     asesores.value = data.asesores ?? []
   } catch (e) {
-    console.error(e)
+    if (actual.signal.aborted) return
+    kpis.value = null
+    errorCarga.value = e?.response?.data?.message ?? 'No se pudo cargar el reporte.'
   } finally {
-    cargando.value = false
+    if (consulta === actual) cargando.value = false
   }
 }
 
@@ -82,11 +95,12 @@ async function cambiarPagina(p) {
 }
 
 onMounted(() => cargar())
-watch([desde, hasta, tipoVenta, asesorId, estadoFiltro], () => cargar())
+watch([desde, hasta, tipoVenta, asesorId, estadoFiltro, moneda], () => cargar())
 
 // ─── Exportar ─────────────────────────────────────────────────────────────────
 function buildParams() {
   const p = new URLSearchParams({ desde: desde.value, hasta: hasta.value })
+  p.set('moneda', moneda.value)
   if (tipoVenta.value !== 'Todos')  p.append('tipo_venta', tipoVenta.value)
   if (estadoFiltro.value !== 'Todos') p.append('estado', estadoFiltro.value)
   if (asesorId.value) p.append('asesor_id', asesorId.value)
@@ -143,13 +157,13 @@ const chartData = computed(() => {
     labels,
     datasets: [
       {
-        label: 'Ventas (Bs.)',
+        label: `Ventas (${simbolo.value})`,
         data: ventasData,
         backgroundColor: 'rgba(59, 130, 246, 0.7)',
         borderRadius: 4,
       },
       {
-        label: 'Cobrado (Bs.)',
+        label: `Cobrado (${simbolo.value})`,
         data: cobrosData,
         backgroundColor: 'rgba(34, 197, 94, 0.7)',
         borderRadius: 4,
@@ -165,7 +179,7 @@ const chartOptions = {
     legend: { position: 'top' },
     tooltip: {
       callbacks: {
-        label: ctx => ' Bs. ' + ctx.parsed.y.toLocaleString('es-BO', { minimumFractionDigits: 2 }),
+        label: ctx => ` ${simbolo.value} ` + ctx.parsed.y.toLocaleString('es-BO', { minimumFractionDigits: 2 }),
       },
     },
   },
@@ -173,7 +187,7 @@ const chartOptions = {
     y: {
       beginAtZero: true,
       ticks: {
-        callback: v => 'Bs. ' + Number(v).toLocaleString('es-BO'),
+        callback: v => `${simbolo.value} ` + Number(v).toLocaleString('es-BO'),
       },
     },
   },
@@ -253,12 +267,20 @@ const paginas = computed(() => {
           <option value="Anulada">Anulada</option>
         </select>
       </div>
+      <div v-if="permiteMoneda">
+        <label class="form-label small mb-1" for="moneda-reporte">Moneda</label>
+        <select id="moneda-reporte" v-model="moneda" class="form-select form-select-sm">
+          <option value="BOB">BOB</option>
+          <option value="USD">USD</option>
+        </select>
+      </div>
       <button class="btn btn-sm btn-primary" @click="cargar()" :disabled="cargando">
         <i class="bi bi-arrow-clockwise me-1"></i> Actualizar
       </button>
     </div>
 
     <!-- ── Spinner ───────────────────────────────────────────────────────── -->
+    <div v-if="errorCarga" class="alert alert-danger" role="alert">{{ errorCarga }}</div>
     <div v-if="cargando" class="text-center py-5">
       <div class="spinner-border text-primary" role="status"></div>
       <p class="text-muted mt-2 small">Cargando datos...</p>
@@ -431,7 +453,7 @@ const paginas = computed(() => {
     v-model="mostrarModalEnvio"
     reporte="ventas-cobros"
     titulo="Ventas y Cobros"
-    :params="{ desde: desde, hasta: hasta, tipo_venta: tipoVenta, estado: estadoFiltro, asesor_id: asesorId }"
+    :params="{ moneda, desde: desde, hasta: hasta, tipo_venta: tipoVenta, estado: estadoFiltro, asesor_id: asesorId }"
   />
 </template>
 

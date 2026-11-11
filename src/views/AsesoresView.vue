@@ -1,4 +1,5 @@
 <script setup>
+import { apiOrigin } from '@/api/config'
 import { ref, onMounted, onUnmounted, computed } from 'vue'
 import api from '../api/axios'
 import Swal from 'sweetalert2'
@@ -36,9 +37,9 @@ const getFullUrl = (path) => {
   if (!path) return null;
   if (path.startsWith('http')) {
     // Si la URL guardada tiene el host incorrecto (sin puerto), lo corregimos
-    return path.replace('http://localhost/storage', import.meta.env.VITE_API_URL + '/storage');
+    return path.replace('http://localhost/storage', apiOrigin + '/storage');
   }
-  return `${import.meta.env.VITE_API_URL}${path}`;
+  return `${apiOrigin}${path}`;
 }
 
 // --- FORMULARIO INTEGRADO (Asesor + Usuario) ---

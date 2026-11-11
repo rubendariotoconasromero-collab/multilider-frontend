@@ -21,6 +21,8 @@ const preview          = ref([])
 const previewTotal     = ref(0)
 const loadPreview      = ref(false)
 const previewVisible   = ref(false)
+const previewToken     = ref(null)
+const requestKey       = ref(null)
 const busquedaPreview  = ref('')
 
 // Selección manual de clientes
@@ -101,8 +103,8 @@ async function cargarGrupos() {
 async function cargarClientesDisponibles() {
   loadClientes.value = true
   try {
-    const { data } = await api.get('/clientes', { params: { per_page: 500 } })
-    clientesDisp.value = (data.data ?? data).filter(c => c.correo)
+    const { data } = await api.get('/correo-masivo/destinatarios')
+    clientesDisp.value = data.data.map(c => ({ ...c, nombre_completo: c.nombre }))
   } catch {
     mostrarAlerta('danger', 'No se pudo cargar la lista de clientes.')
   } finally {
@@ -120,18 +122,31 @@ watch(tipoSel, (val) => {
   }
 })
 
+watch(() => JSON.stringify(buildPayload()), () => {
+  previewToken.value = null
+  requestKey.value = null
+  previewTotal.value = 0
+  previewVisible.value = false
+})
+
+watch([asunto, mensaje], () => { requestKey.value = null })
+
 async function verPreview() {
   if (tipoSel.value === 'ciudad' && !ciudadId.value) {
     mostrarAlerta('warning', 'Selecciona una ciudad primero.')
     return
   }
   loadPreview.value = true
+  previewToken.value = null
   previewVisible.value = false
   try {
     const payload = buildPayload()
+    const filterKey = JSON.stringify(payload)
     const { data } = await api.post('/correo-masivo/preview-destinatarios', payload)
+    if (filterKey !== JSON.stringify(buildPayload())) return
     preview.value     = data.destinatarios
     previewTotal.value = data.total
+    previewToken.value = data.preview_token
     previewVisible.value = true
   } catch (e) {
     mostrarAlerta('danger', e?.response?.data?.message ?? 'Error al obtener la vista previa.')
@@ -142,8 +157,10 @@ async function verPreview() {
 
 async function enviarCampana() {
   if (!formularioValido.value) return
+  if (!previewToken.value) await verPreview()
+  if (!previewToken.value || !previewTotal.value) return
 
-  if (!confirm(`¿Confirmas el envío a ${previewTotal.value || '?'} destinatarios?`)) return
+  if (!confirm(`¿Confirmas el envío a ${previewTotal.value} destinatarios?`)) return
 
   enviando.value = true
   estadoCampana.value = null
@@ -151,12 +168,18 @@ async function enviarCampana() {
   clearInterval(pollingId.value)
 
   try {
-    const payload = { ...buildPayload(), asunto: asunto.value, mensaje: mensaje.value }
+    requestKey.value ??= crypto.randomUUID()
+    const payload = { ...buildPayload(), asunto: asunto.value, mensaje: mensaje.value,
+      preview_token: previewToken.value, request_key: requestKey.value }
     const { data } = await api.post('/correo-masivo/enviar', payload)
     campanaId.value = data.campana_id
     mostrarAlerta('success', `Campaña iniciada. Enviando a ${data.total} destinatarios en segundo plano.`)
     iniciarPolling()
   } catch (e) {
+    if (e?.response?.status === 409) {
+      previewToken.value = null
+      requestKey.value = null
+    }
     mostrarAlerta('danger', e?.response?.data?.message ?? 'Error al iniciar la campaña.')
     enviando.value = false
   }
@@ -196,7 +219,7 @@ async function cargarHistorial(page = 1) {
 function buildPayload() {
   const base = { tipo: tipoSel.value }
   if (tipoSel.value === 'ciudad')        base.ciudad_id    = ciudadId.value
-  if (tipoSel.value === 'seleccionados') base.cliente_ids  = clienteSelIds.value
+  if (tipoSel.value === 'seleccionados') base.cliente_ids  = [...clienteSelIds.value]
   return base
 }
 
@@ -430,6 +453,7 @@ function formatFecha(fecha) {
                 </span>
                 <span>
                   <i class="bi bi-x-circle text-danger me-1"></i>{{ estadoCampana.total_fallidos }} fallidos
+                  <span v-if="estadoCampana.total_inciertos"> · {{ estadoCampana.total_inciertos }} sin confirmar</span>
                 </span>
                 <span>
                   <i class="bi bi-people me-1"></i>{{ estadoCampana.total_destinatarios }} total
@@ -530,6 +554,7 @@ function formatFecha(fecha) {
                     </td>
                     <td>
                       <span class="text-danger fw-medium">{{ c.total_fallidos }}</span>
+                      <span v-if="c.total_inciertos"> · {{ c.total_inciertos }} sin confirmar</span>
                     </td>
                     <td>{{ c.total_destinatarios }}</td>
                     <td>

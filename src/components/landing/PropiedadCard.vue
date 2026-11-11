@@ -1,4 +1,5 @@
 <script setup>
+import { apiOrigin } from '@/api/config'
 import { useRouter } from 'vue-router'
 import { MapPin, Maximize, Bed, Bath, Building2, Tag, Home, ArrowRight } from 'lucide-vue-next'
 
@@ -20,7 +21,7 @@ const estadoBadgeClass = (estado) => {
 const mainImage = (prop) => {
   if (!prop.imagenes?.length) return null
   const principal = prop.imagenes.find(i => i.es_principal)
-  return import.meta.env.VITE_API_URL + (principal?.url || prop.imagenes[0]?.url)
+  return apiOrigin + (principal?.url || prop.imagenes[0]?.url)
 }
 
 const goToDetail = () => {

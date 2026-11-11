@@ -1,4 +1,5 @@
 <script setup>
+import { apiOrigin } from '@/api/config'
 import { ref, onMounted, reactive } from 'vue'
 import { useCompanyStore } from '@/stores/company'
 import Swal from 'sweetalert2'
@@ -55,7 +56,7 @@ const previews = reactive({
   hero_image_3: null
 })
 
-const baseUrl = import.meta.env.VITE_API_URL
+const baseUrl = apiOrigin
 
 onMounted(async () => {
   await companyStore.fetchCompany()

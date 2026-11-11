@@ -1,4 +1,5 @@
 <script setup>
+import { apiOrigin } from '@/api/config'
 import { ref, onUnmounted, onMounted } from 'vue'
 import { useRouter } from 'vue-router'
 import { useAuthStore } from '../stores/auth'
@@ -14,7 +15,7 @@ const cargando = ref(false)
 const errorMensaje = ref('')
 const mostrarPassword = ref(false)
 
-const baseUrl = import.meta.env.VITE_API_URL
+const baseUrl = apiOrigin
 
 // === NUEVAS VARIABLES PARA EL TEMPORIZADOR ===
 const segundosBloqueo = ref(0)

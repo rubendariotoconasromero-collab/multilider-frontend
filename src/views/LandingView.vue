@@ -23,6 +23,10 @@ onMounted(() => {
     <LandingHeader />
     
     <main>
+      <div v-if="companyStore.error" class="container pt-3">
+        <p class="alert alert-danger" role="alert">{{ companyStore.error }}</p>
+        <button class="btn btn-outline-primary" @click="companyStore.fetchLandingData()">Volver a cargar</button>
+      </div>
       <LandingHero />
       <LandingFeatures />
       <LandingCatalog />

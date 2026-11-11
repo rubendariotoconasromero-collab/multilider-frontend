@@ -1,4 +1,5 @@
 <script setup>
+import { apiOrigin } from '@/api/config'
 import { ref, computed, onMounted, onUnmounted } from 'vue'
 import { useRoute } from 'vue-router'
 import api from '@/api/axios'
@@ -15,7 +16,7 @@ const toggleTheme = () => {
 
 const route = useRoute()
 const companyStore = useCompanyStore()
-const baseUrl = import.meta.env.VITE_API_URL
+const baseUrl = apiOrigin
 
 // ── Estado del wizard ────────────────────────────────────────────────────────
 const step = ref(1)
@@ -49,7 +50,7 @@ const urlPago = ref('')
 const qrUrl = ref('')
 const idTransaccion = ref('')
 const estadoPago = ref('PENDIENTE')
-const storageKey = 'payment-test-reference:' + import.meta.env.VITE_API_URL
+const storageKey = 'payment-test-reference:' + apiOrigin
 const uuidFormat = /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i
 let remembered = ''
 try { remembered = sessionStorage.getItem(storageKey) || '' } catch { /* optional recovery storage */ }

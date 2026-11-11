@@ -22,6 +22,11 @@ const perPage  = ref(15)
 const pagina   = ref(1)
 
 const cargando          = ref(false)
+const errorCarga = ref('')
+let consulta
+const moneda = ref('BOB')
+const permiteMoneda = ref(false)
+const simbolo = computed(() => moneda.value === 'USD' ? 'USD' : 'Bs.')
 const exportandoPdf     = ref(false)
 const exportandoXls     = ref(false)
 const mostrarModalEnvio = ref(false)
@@ -34,7 +39,7 @@ const asesores = ref([])
 
 // ─── Helpers ─────────────────────────────────────────────────────────────────
 const MESES = ['Ene','Feb','Mar','Abr','May','Jun','Jul','Ago','Sep','Oct','Nov','Dic']
-const fmt = (v) => 'Bs. ' + (parseFloat(v)||0).toLocaleString('es-BO', { minimumFractionDigits: 2 })
+const fmt = (v) => `${simbolo.value} ` + (parseFloat(v)||0).toLocaleString('es-BO', { minimumFractionDigits: 2 })
 
 const fmtFecha = (v) => {
   if (!v) return '-'
@@ -59,6 +64,10 @@ const medalEmoji = (i) => ['🥇', '🥈', '🥉'][i] ?? (i + 1) + '°'
 
 // ─── Carga ────────────────────────────────────────────────────────────────────
 async function cargar(resetPagina = true) {
+  consulta?.abort()
+  const actual = new AbortController()
+  consulta = actual
+  errorCarga.value = ''
   if (resetPagina) pagina.value = 1
   cargando.value = true
   try {
@@ -70,16 +79,20 @@ async function cargar(resetPagina = true) {
     }
     if (asesorId.value) params.asesor_id = asesorId.value
 
-    const { data } = await api.get('/reportes/desempeno-asesores', { params })
+    params.moneda = moneda.value
+    const { data } = await api.get('/reportes/desempeno-asesores', { params, signal: actual.signal })
+    permiteMoneda.value = Boolean(data.moneda)
     kpis.value     = data.kpis
     ranking.value  = data.ranking  ?? []
     grafico.value  = data.grafico  ?? []
     ventas.value   = data.ventas
     asesores.value = data.asesores ?? []
   } catch (e) {
-    console.error(e)
+    if (actual.signal.aborted) return
+    kpis.value = null
+    errorCarga.value = e?.response?.data?.message ?? 'No se pudo cargar el reporte.'
   } finally {
-    cargando.value = false
+    if (consulta === actual) cargando.value = false
   }
 }
 
@@ -89,14 +102,14 @@ async function cambiarPagina(p) {
 }
 
 onMounted(() => cargar())
-watch([desde, hasta, asesorId], () => cargar())
+watch([desde, hasta, asesorId, moneda], () => cargar())
 
 // ─── Exportar ────────────────────────────────────────────────────────────────
 async function exportar(tipo) {
   const flag = tipo === 'pdf' ? exportandoPdf : exportandoXls
   flag.value = true
   try {
-    const params = { desde: desde.value, hasta: hasta.value }
+    const params = { moneda: moneda.value, desde: desde.value, hasta: hasta.value }
     if (asesorId.value) params.asesor_id = asesorId.value
 
     const res  = await api.get('/reportes/desempeno-asesores/' + tipo, { params, responseType: 'blob' })
@@ -126,13 +139,13 @@ const chartRankingData = computed(() => {
     labels: top.map(r => r.nombre),
     datasets: [
       {
-        label: 'Monto Vendido (Bs.)',
+        label: `Monto Vendido (${simbolo.value})`,
         data:  top.map(r => r.monto_vendido),
         backgroundColor: 'rgba(59,130,246,0.75)',
         borderRadius: 4,
       },
       {
-        label: 'Cobrado (Bs.)',
+        label: `Cobrado (${simbolo.value})`,
         data:  top.map(r => r.cobrado),
         backgroundColor: 'rgba(34,197,94,0.7)',
         borderRadius: 4,
@@ -147,10 +160,10 @@ const chartRankingOptions = {
   maintainAspectRatio: false,
   plugins: {
     legend: { position: 'top' },
-    tooltip: { callbacks: { label: ctx => ' Bs. ' + ctx.parsed.x.toLocaleString('es-BO', { minimumFractionDigits: 2 }) } },
+    tooltip: { callbacks: { label: ctx => ` ${simbolo.value} ` + ctx.parsed.x.toLocaleString('es-BO', { minimumFractionDigits: 2 }) } },
   },
   scales: {
-    x: { beginAtZero: true, ticks: { callback: v => 'Bs. ' + Number(v).toLocaleString('es-BO') } },
+    x: { beginAtZero: true, ticks: { callback: v => `${simbolo.value} ` + Number(v).toLocaleString('es-BO') } },
   },
 }
 
@@ -160,7 +173,7 @@ const chartMesData = computed(() => {
   return {
     labels: grafico.value.map(g => labelMes(g.anio, g.mes)),
     datasets: [{
-      label: 'Ventas (Bs.)',
+      label: `Ventas (${simbolo.value})`,
       data:  grafico.value.map(g => parseFloat(g.total)),
       backgroundColor: 'rgba(99,102,241,0.7)',
       borderRadius: 4,
@@ -173,10 +186,10 @@ const chartMesOptions = {
   maintainAspectRatio: false,
   plugins: {
     legend: { display: false },
-    tooltip: { callbacks: { label: ctx => ' Bs. ' + ctx.parsed.y.toLocaleString('es-BO', { minimumFractionDigits: 2 }) } },
+    tooltip: { callbacks: { label: ctx => ` ${simbolo.value} ` + ctx.parsed.y.toLocaleString('es-BO', { minimumFractionDigits: 2 }) } },
   },
   scales: {
-    y: { beginAtZero: true, ticks: { callback: v => 'Bs. ' + Number(v).toLocaleString('es-BO') } },
+    y: { beginAtZero: true, ticks: { callback: v => `${simbolo.value} ` + Number(v).toLocaleString('es-BO') } },
   },
 }
 
@@ -234,6 +247,13 @@ const paginas = computed(() => {
           <option v-for="a in asesores" :key="a.id" :value="a.id">{{ a.nombre_completo }}</option>
         </select>
       </div>
+      <div v-if="permiteMoneda">
+        <label class="form-label small mb-1" for="moneda-reporte">Moneda</label>
+        <select id="moneda-reporte" v-model="moneda" class="form-select form-select-sm">
+          <option value="BOB">BOB</option>
+          <option value="USD">USD</option>
+        </select>
+      </div>
       <button class="btn btn-sm btn-primary" @click="cargar()" :disabled="cargando">
         <i class="bi bi-arrow-clockwise me-1"></i> Actualizar
       </button>
@@ -243,6 +263,7 @@ const paginas = computed(() => {
     </div>
 
     <!-- ── Spinner ───────────────────────────────────────────────────────── -->
+    <div v-if="errorCarga" class="alert alert-danger" role="alert">{{ errorCarga }}</div>
     <div v-if="cargando" class="text-center py-5">
       <div class="spinner-border text-primary" role="status"></div>
       <p class="text-muted mt-2 small">Cargando datos...</p>
@@ -490,7 +511,7 @@ const paginas = computed(() => {
     v-model="mostrarModalEnvio"
     reporte="desempeno-asesores"
     titulo="Desempeño de Asesores"
-    :params="{ desde: desde, hasta: hasta, asesor_id: asesorId }"
+    :params="{ moneda, desde: desde, hasta: hasta, asesor_id: asesorId }"
   />
 </template>
 

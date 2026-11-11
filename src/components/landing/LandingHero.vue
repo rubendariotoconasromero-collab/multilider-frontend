@@ -1,4 +1,5 @@
 <script setup>
+import { apiOrigin } from '@/api/config'
 import { ref, onMounted, computed } from 'vue'
 import { useRouter } from 'vue-router'
 import { useCompanyStore } from '@/stores/company'
@@ -7,7 +8,7 @@ import { Search, MapPin, Home, DollarSign, ChevronLeft, ChevronRight } from 'luc
 const router = useRouter()
 const companyStore = useCompanyStore()
 const currentSlide = ref(0)
-const baseUrl = import.meta.env.VITE_API_URL
+const baseUrl = apiOrigin
 
 const filterType = ref('')
 const filterCity = ref('')

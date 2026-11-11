@@ -1,0 +1,1 @@
+window.MULTILIDER_CONFIG ??= {}
