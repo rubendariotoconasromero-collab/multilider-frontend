@@ -1,5 +1,5 @@
 <script setup>
-import { ref, onMounted, watch } from 'vue'
+import { computed, ref, onMounted, watch } from 'vue'
 import api from '../api/axios'
 import Swal from 'sweetalert2'
 
@@ -125,16 +125,23 @@ const abrirModalPago = (pago) => {
 
 const cerrarModalPago = () => { mostrarModalPago.value = false }
 
+const monedaPago = pago => pago?.nota_venta?.moneda || pago?.nota_venta?.propiedad?.moneda
+const etiquetaMoneda = pago => ['USD', '$'].includes(monedaPago(pago)) ? 'USD' : 'Bs.'
+const cuentasCompatibles = computed(() => {
+  const moneda = monedaPago(pagoProcesando.value)
+  return cuentasBancarias.value.filter(cuenta => !cuenta.moneda || !moneda || cuenta.moneda === moneda)
+})
+
 const onMetodoChange = async () => {
-  if (!formPago.value.metodo_pago_id) { formPago.value.cuenta_id = ''; return }
+  const form = formPago.value
+  if (!form.metodo_pago_id) return
   try {
-    const res = await api.get(`/mapeo-metodos-cuentas/obtener-cuenta/${formPago.value.metodo_pago_id}`)
-    const sale = pagoProcesando.value?.nota_venta
-    const currency = sale?.moneda || sale?.propiedad?.moneda
-    const account = res.data
-    formPago.value.cuenta_id = account?.id && (!account.moneda || !currency || account.moneda === currency) ? account.id : ''
+    const { data: account } = await api.get(`/mapeo-metodos-cuentas/obtener-cuenta/${form.metodo_pago_id}`)
+    if (formPago.value === form && !form.cuenta_id && cuentasCompatibles.value.some(cuenta => cuenta.id === account?.id)) {
+      form.cuenta_id = account.id
+    }
   } catch {
-    formPago.value.cuenta_id = ''
+    // El usuario puede elegir una cuenta aunque no haya mapeo.
   }
 }
 
@@ -143,7 +150,7 @@ const procesarPago = async () => {
     return Swal.fire('Validación', 'Completa todos los campos requeridos', 'warning')
   }
   if (!formPago.value.cuenta_id) {
-    return Swal.fire('Atención', 'No se pudo determinar la cuenta destino. Verifica el mapeo de método de pago.', 'warning')
+    return Swal.fire('Atención', 'Selecciona una cuenta de destino compatible.', 'warning')
   }
   try {
     procesando.value = true
@@ -164,7 +171,7 @@ const procesarPago = async () => {
 const anularPago = async (pago) => {
   const { isConfirmed } = await Swal.fire({
     title: '¿Anular pago?',
-    html: `Se anulará el pago de <strong>Bs. ${formatoMoneda(pago.monto)}</strong> de <strong>${pago.nota_venta?.cliente?.nombre_completo ?? ''}</strong>.`,
+    html: `Se anulará el pago de <strong>${etiquetaMoneda(pago)} ${formatoMoneda(pago.monto)}</strong> de <strong>${pago.nota_venta?.cliente?.nombre_completo ?? ''}</strong>.`,
     icon: 'warning',
     showCancelButton: true,
     confirmButtonText: 'Sí, anular',
@@ -336,7 +343,7 @@ const conceptoLabel = (c) => ({
                   </span>
                   <span v-else class="extra-small text-muted fst-italic">Sin definir</span>
                 </td>
-                <td class="text-end pe-3 fw-bold text-primary">Bs. {{ formatoMoneda(pago.monto) }}</td>
+                <td class="text-end pe-3 fw-bold text-primary">{{ etiquetaMoneda(pago) }} {{ formatoMoneda(pago.monto) }}</td>
                 <td class="text-center">
                   <button
                     v-if="esEfectivo(pago)"
@@ -449,7 +456,7 @@ const conceptoLabel = (c) => ({
                   <span v-else class="extra-small text-muted fst-italic">-</span>
                 </td>
                 <td class="text-muted">{{ formatoFecha(pago.fecha_pago) }}</td>
-                <td class="text-end pe-3 fw-bold text-success">Bs. {{ formatoMoneda(pago.monto) }}</td>
+                <td class="text-end pe-3 fw-bold text-success">{{ etiquetaMoneda(pago) }} {{ formatoMoneda(pago.monto) }}</td>
                 <td class="text-center">
                   <div class="d-flex gap-1 justify-content-center">
                     <button
@@ -526,7 +533,7 @@ const conceptoLabel = (c) => ({
               <div class="col-md-4 text-md-end">
                 <div class="summary-label">Monto a Cobrar</div>
                 <div class="summary-value text-success h4 mb-0 fw-bold">
-                  <span class="small me-1">Bs.</span>{{ formatoMoneda(pagoProcesando.monto) }}
+                  <span class="small me-1">{{ etiquetaMoneda(pagoProcesando) }}</span>{{ formatoMoneda(pagoProcesando.monto) }}
                 </div>
               </div>
             </div>
@@ -547,15 +554,14 @@ const conceptoLabel = (c) => ({
                 </div>
               </div>
               <div class="col-md-4">
-                <label class="form-label fw-bold small text-muted text-uppercase mb-2">Cuenta Destino</label>
+                <label for="cuenta-destino" class="form-label fw-bold small text-muted text-uppercase mb-2">Cuenta Destino</label>
                 <div class="input-group input-group-sm">
                   <span class="input-group-text bg-light border-0"><i class="bi bi-bank text-primary"></i></span>
-                  <input
-                    type="text"
-                    class="form-control border-0 bg-light fw-semibold text-primary"
-                    :value="cuentasBancarias.find(c => c.id === formPago.cuenta_id)?.nombre ?? 'Sin cuenta compatible'"
-                    disabled
-                  >
+                  <select id="cuenta-destino" v-model="formPago.cuenta_id" class="form-select border-0 bg-light"
+                    :disabled="procesando || !cuentasCompatibles.length" required>
+                    <option value="" disabled>{{ cuentasCompatibles.length ? 'Selecciona una cuenta' : 'Sin cuenta compatible' }}</option>
+                    <option v-for="cuenta in cuentasCompatibles" :key="cuenta.id" :value="cuenta.id">{{ cuenta.nombre }}</option>
+                  </select>
                 </div>
               </div>
               <div class="col-md-4">
