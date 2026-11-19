@@ -4,7 +4,8 @@ import api from '../api/axios'
 import Swal from 'sweetalert2'
 
 const props = defineProps({ email: { type: String, default: '' } })
-const eligible = computed(() => props.email.toLowerCase().endsWith('@tecnoweb.space'))
+const mailboxEmail = ref(props.email)
+const eligible = computed(() => mailboxEmail.value.toLowerCase().endsWith('@tecnoweb.space'))
 const connected = ref(false)
 const password = ref('')
 const showPassword = ref(false)
@@ -48,6 +49,7 @@ async function refresh(targetPage = page.value) {
   try { await load() } catch(e) { handleError(e) } finally { busy.value = false }
 }
 async function check() {
+  mailboxEmail.value = props.email
   password.value = ''
   showPassword.value = false
   connected.value = false
@@ -55,11 +57,12 @@ async function check() {
   selected.value = null
   composing.value = false
   draft.value = {to:'',subject:'',body:''}
-  if (!eligible.value) return
+  if (!props.email) return
   busy.value = true
   error.value = ''
   try {
     const {data} = await api.get('/perfil/correo/estado')
+    mailboxEmail.value = data.email
     connected.value = data.connected
     if (data.connected) await load()
   } catch(e) { handleError(e) } finally { busy.value = false }
@@ -145,7 +148,7 @@ watch(() => props.email, check)
   <section class="card border-0 shadow-sm mt-4 correo-perfil" aria-labelledby="correo-title">
     <div class="card-body p-4">
       <div class="d-flex flex-wrap align-items-center justify-content-between gap-2 mb-3">
-        <div><h3 id="correo-title" class="h5 fw-bold mb-1"><i class="bi bi-envelope me-2"></i>Mi correo</h3><div class="text-muted small">{{ email }}</div></div>
+        <div><h3 id="correo-title" class="h5 fw-bold mb-1"><i class="bi bi-envelope me-2"></i>Mi correo</h3><div class="text-muted small">{{ mailboxEmail }}</div></div>
         <div v-if="connected" class="d-flex gap-2">
           <button class="btn btn-outline-secondary btn-sm" :disabled="busy" @click="refresh()">Actualizar</button>
           <button class="btn btn-primary btn-sm" :disabled="busy" @click="compose()">Redactar</button>
