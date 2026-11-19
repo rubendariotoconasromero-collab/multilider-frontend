@@ -4,6 +4,7 @@ import api from '../api/axios'
 import Swal from 'sweetalert2'
 import { useAuthStore } from '../stores/auth'
 import ProfileMailManager from '../components/ProfileMailManager.vue'
+import SystemMailHistory from '../components/SystemMailHistory.vue'
 
 const authStore = useAuthStore()
 
@@ -336,6 +337,7 @@ const avatarUrl = computed(() =>
 
     </div>
     <ProfileMailManager :email="authStore.user?.correo || ''" />
+    <SystemMailHistory :key="`${authStore.user?.id}:${authStore.user?.correo}`" />
   </div>
 </template>
 

@@ -2,6 +2,7 @@
 import { computed, onMounted, ref, watch } from 'vue'
 import api from '../api/axios'
 import Swal from 'sweetalert2'
+import MailDocumentList from './MailDocumentList.vue'
 
 const props = defineProps({ email: { type: String, default: '' } })
 const mailboxEmail = ref(props.email)
@@ -21,6 +22,9 @@ const selected = ref(null)
 const composing = ref(false)
 const draft = ref({ to: '', subject: '', body: '' })
 const folders = [{id:'INBOX',name:'Entrada'}, {id:'Sent',name:'Enviados'}, {id:'Trash',name:'Papelera'}]
+const attachments = computed(() => (selected.value?.adjuntos || []).map(file => ({ ...file,
+  url: `/perfil/correo/mensajes/${selected.value.uid}/adjuntos/${file.id}?${new URLSearchParams({ folder: folder.value, uidvalidity: selected.value.uidvalidity })}`,
+})))
 
 function handleError(e) {
   error.value = e.response?.data?.errors ? Object.values(e.response.data.errors).flat().join(' ') : (e.response?.data?.message || 'No se pudo conectar con el servidor de correo.')
@@ -176,7 +180,7 @@ watch(() => props.email, check)
             <div class="d-flex justify-content-between small text-muted mb-2"><span>{{ total }} mensajes</span><span v-if="busy" role="status">Cargando…</span></div>
             <div class="list-group correo-lista">
               <button v-for="row in messages" :key="row.uid" type="button" class="list-group-item list-group-item-action" :class="{'active':selected?.uid === row.uid,'fw-bold':!row.seen}" :disabled="busy" @click="open(row)">
-                <div class="text-truncate">{{ row.subject || '(Sin asunto)' }}</div><div class="small text-truncate opacity-75">{{ folder === 'Sent' ? row.to : row.from }}</div><div class="small opacity-75">{{ row.date }}</div>
+                <div class="text-truncate">{{ row.subject || '(Sin asunto)' }} <span v-if="row.attachment_count" class="small" aria-label="Contiene adjuntos"><i class="bi bi-paperclip"></i> {{ row.attachment_count }}</span></div><div class="small text-truncate opacity-75">{{ folder === 'Sent' ? row.to : row.from }}</div><div class="small opacity-75">{{ row.date }}</div>
               </button>
               <div v-if="!messages.length && !busy" class="border rounded p-4 text-muted text-center">Esta carpeta está vacía.</div>
             </div>
@@ -193,12 +197,13 @@ watch(() => props.email, check)
             <article v-else-if="selected" class="border rounded p-3">
               <h4 class="h6 fw-bold text-break">{{ selected.subject }}</h4><div class="small text-muted text-break mb-3">De: {{ selected.from }}<br>Para: {{ selected.to }}<br>{{ selected.date }}</div>
               <div class="correo-body text-break">{{ selected.body || 'Este mensaje no contiene texto disponible en el gestor.' }}</div>
+              <MailDocumentList :key="`${folder}:${selected.uid}:${selected.uidvalidity}`" :files="attachments" />
               <div class="d-flex gap-2 mt-3"><button v-if="selected.reply_to" class="btn btn-sm btn-primary" :disabled="busy" @click="compose(true)">Responder</button><button class="btn btn-sm btn-outline-secondary" :disabled="busy" @click="move">{{ folder === 'Trash' ? 'Restaurar' : 'Mover a Papelera' }}</button></div>
             </article>
             <div v-else class="border rounded p-4 text-muted text-center">Selecciona un mensaje para leerlo o pulsa Redactar.</div>
           </div>
         </div>
-        <p class="text-muted small mt-3 mb-0">Los mensajes se muestran como texto. Para gestionar adjuntos, utiliza Thunderbird.</p>
+        <p class="text-muted small mt-3 mb-0">Los mensajes se muestran como texto. Abre o descarga sus archivos desde el detalle.</p>
       </template>
     </div>
   </section>

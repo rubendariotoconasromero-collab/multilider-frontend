@@ -545,6 +545,7 @@ function formatFecha(fecha) {
                     <td class="text-muted">#{{ c.id }}</td>
                     <td class="fw-medium" style="max-width:200px">
                       <div class="text-truncate" :title="c.asunto">{{ c.asunto }}</div>
+                      <RouterLink v-if="c.envio_documental?.id" :to="{path:'/perfil',query:{envio:c.envio_documental.id}}" class="small">Ver envío y archivos</RouterLink>
                     </td>
                     <td>
                       <span class="badge bg-light text-dark border">{{ c.tipo_destinatario }}</span>

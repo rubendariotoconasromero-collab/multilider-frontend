@@ -17,12 +17,15 @@ const busqueda       = ref('')
 const cargando       = ref(false)
 const enviando       = ref(false)
 const resultado      = ref(null)
+const requestKey = ref(null)
+watch([seleccionados, () => props.reporte, () => JSON.stringify(props.params)], () => { requestKey.value = null }, { deep: true })
 
 const close = () => {
   emit('update:modelValue', false)
   resultado.value = null
   seleccionados.value = []
   busqueda.value = ''
+  requestKey.value = null
 }
 
 watch(() => props.modelValue, async (val) => {
@@ -68,14 +71,17 @@ function toggleTodos() {
 async function enviar() {
   if (seleccionados.value.length === 0) return
   enviando.value = true
+  requestKey.value ||= crypto.randomUUID()
   resultado.value = null
   try {
     const { data } = await api.post('/reportes/enviar-informe', {
       reporte:    props.reporte,
       usuario_ids: seleccionados.value,
       params:     props.params,
+      request_key: requestKey.value,
     })
-    resultado.value = { tipo: 'success', msg: `Informe enviado a ${data.enviados} usuario(es).` + (data.fallidos > 0 ? ` ${data.fallidos} fallaron.` : '') }
+    resultado.value = { tipo: data.inciertos ? 'warning' : 'success', envio: data.envio_id,
+      msg: `Aceptado por SMTP para ${data.enviados} usuario(es).` + (data.inciertos ? ` ${data.inciertos} resultado(s) por confirmar; consulta el historial antes de reenviar.` : data.fallidos > 0 ? ` ${data.fallidos} con incidencias.` : '') }
     seleccionados.value = []
   } catch (e) {
     const msg = e?.response?.data?.message ?? 'Error al enviar el informe.'
@@ -108,6 +114,7 @@ async function enviar() {
           <div v-if="resultado" class="alert" :class="'alert-' + resultado.tipo" role="alert">
             <i class="bi me-2" :class="resultado.tipo === 'success' ? 'bi-check-circle' : 'bi-exclamation-triangle'"></i>
             {{ resultado.msg }}
+            <RouterLink v-if="resultado.envio" :to="{path:'/perfil',query:{envio:resultado.envio}}" class="d-block mt-2" @click="close">Ver envío y documento</RouterLink>
           </div>
 
           <!-- Cargando usuarios -->
